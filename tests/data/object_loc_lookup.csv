@@ -1,0 +1,14 @@
+"SingleCellExperiment","URD","FunctionalSingleCellExperiment","Seurat","CellDataSet","H5File"
+"input@assays$data$logcounts","input@logupx.data","input@ExperimentList$rnaseq@assays$data$logcounts","input@assays$RNA@data","do.call(function(x) {row.names(x) <- input@featureData@data$gene_short_name; return(x)}, list(input@assayData$exprs))","{mat <- input[[""layers/norm_data""]][,];
+colnames(mat) <- input[[""row_attrs/gene_names""]][];
+rownames(mat) <- input[[""col_attrs/cell_names""]][];
+mat <- t(mat);
+return(mat)}"
+"as.data.frame(input@colData)","input@meta","input@ExperimentList$rnaseq@colData","input@meta.data","as.data.frame(input@phenoData@data)","{l <- input$ls(recursive=TRUE);
+s <- l[,1][stringr::str_detect(l[,1], ""col_attrs/"")];
+s2 <- sapply(s, FUN=function(x) {input[[x]][]});
+colnames(s2) <- stringr::str_remove(colnames(s2),""col_attrs/"");
+meta <- tibble::column_to_rownames(as.data.frame(s2), ""cell_names"");
+return(meta)}"
+"NULL","input@var.genes","NULL","input@assays$RNA@var.features","as.character(input@featureData@data$gene_short_name[input@featureData@data$use_for_ordering == T])","NULL"
+"cell_type1","cluster","leiden_cluster","RNA_snn_res.1","Main_Cluster","orig.ident"
