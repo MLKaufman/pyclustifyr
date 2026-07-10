@@ -1,0 +1,3 @@
+[submodule "clustifyr"]
+	path = clustifyr
+	url = https://github.com/rnabioco/clustifyr.git
