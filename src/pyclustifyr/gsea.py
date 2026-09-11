@@ -78,10 +78,18 @@ def fgsea_simple(
 
     ``stats`` maps gene -> ranking metric (e.g. expression). Returns a
     DataFrame with columns ``pathway``, ``pval``, ``es``, ``nes``, ``size``.
-    Nonfinite statistics are excluded from the gene universe; pathway genes
+    Ranking gene IDs must be unique; duplicates raise ValueError rather than
+    implicitly choosing or aggregating a score. Nonfinite statistics are
+    excluded from the gene universe; pathway genes
     are deduplicated. Sets with no overlap or covering the whole universe
     are skipped because their enrichment statistic is undefined.
     """
+    if not stats.index.is_unique:
+        duplicates = stats.index[stats.index.duplicated()].unique().tolist()
+        raise ValueError(
+            f"GSEA ranking gene IDs must be unique; duplicate IDs: {duplicates[:5]!r}. "
+            "Resolve duplicate gene scores before running GSEA."
+        )
     rng = rng or np.random.default_rng()
     stats = stats.loc[np.isfinite(stats.to_numpy())]
     ranks, gene_to_pos = _prepare_ranks(stats)

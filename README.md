@@ -233,7 +233,8 @@ print(nes.round(2))  # clusters x pathways, normalized enrichment scores
 > aren't pooled across same-size gene sets the way `fgseaMultilevel` is, so exact
 > values won't bit-for-bit match R's RNG — they converge to the same numbers.
 
-GSEA deduplicates pathway genes and excludes nonfinite ranking statistics
+GSEA requires unique gene IDs in its ranking input and rejects duplicates;
+resolve them explicitly before analysis. It deduplicates pathway genes and excludes nonfinite ranking statistics
 (including constant genes after scaling) from both scoring and the permutation
 universe. Pathways with no remaining genes or covering the entire remaining
 universe receive missing p-values/NES from `run_gsea()`.
@@ -282,12 +283,16 @@ match R to within floating-point precision (`~1e-9` to `~1e-16`). Where they
 don't (and can't, in the case of GSEA's permutation RNG), it's called out in
 the corresponding module and test file. `scripts/export_r_datasets.R` and
 `scripts/export_r_expected.R` (re-)generate the fixtures under `tests/data/`
-from the `clustifyr` R submodule.
+using a separately installed R/clustifyR environment. R is needed only to
+regenerate those development fixtures; the committed fixtures allow the Python
+test suite to run without R.
 
 ## Relationship to clustifyr
 
 This is a from-scratch Python port, not a wrapper — there's no R dependency at
-runtime. It aims for numerical parity with the original wherever the algorithm
+runtime, and it never invokes R under the hood. Classification, aggregation,
+and GSEA execute in Python using NumPy/SciPy and the other declared Python
+dependencies. It aims for numerical parity with the original wherever the algorithm
 is well-defined, and documents where it deliberately deviates (e.g. it fixes a
 gene-name-loss bug in `ref_marker_select` that exists in the R package). See
 the original [clustifyr paper/repo](https://github.com/rnabioco/clustifyr) and
@@ -298,3 +303,8 @@ method.
 building a reference *from* a cellbrowser dataset is supported), and a couple
 of GO-enrichment/rank-bias plotting helpers that depend on live internet
 access to gene-ontology services.
+
+## License
+
+MIT, matching [upstream clustifyR](https://github.com/rnabioco/clustifyr/blob/master/LICENSE).
+See [LICENSE](LICENSE) for the terms and retained upstream copyright notice.
