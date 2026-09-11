@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from scipy.spatial.distance import pdist, squareform
 
-from .clusters import average_clusters
+from .clusters import _cluster_ids_from_metadata, average_clusters
 
 
 def marker_select(row: pd.Series, cut: float = 1, compto: int = 1) -> tuple | None:
@@ -136,10 +136,7 @@ def gene_pct_markerm(
     norm: str | float | None = None,
 ) -> pd.DataFrame:
     """``gene_pct`` for every marker set (column) in ``marker_m``."""
-    if isinstance(metadata, pd.DataFrame):
-        cluster_info = metadata[cluster_col]
-    else:
-        cluster_info = metadata
+    cluster_info = _cluster_ids_from_metadata(matrix, metadata, cluster_col)
 
     cols = {}
     for col in marker_m.columns:

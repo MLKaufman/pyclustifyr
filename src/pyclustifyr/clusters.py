@@ -15,20 +15,31 @@ from scipy.stats import rankdata, trim_mean
 
 
 def _cluster_ids_from_metadata(mat: pd.DataFrame, metadata, cluster_col: str | None) -> list:
+    """Align labeled metadata by cell ID; plain vectors remain positional."""
     if isinstance(metadata, pd.DataFrame):
         if cluster_col is None or cluster_col not in metadata.columns:
             raise ValueError("given `cluster_col` is not a column in `metadata`")
         cluster_info = metadata[cluster_col]
-        if isinstance(cluster_info.dtype, pd.CategoricalDtype):
-            cluster_info = cluster_info.cat.remove_unused_categories()
-        cluster_ids = list(cluster_info)
+    elif isinstance(metadata, pd.Series):
+        cluster_info = metadata
     else:
-        cluster_ids = list(metadata)
-    if mat.shape[1] != len(cluster_ids):
-        raise ValueError(
-            "cluster assignments do not match the number of columns in the matrix"
-        )
-    return cluster_ids
+        cluster_info = pd.Series(list(metadata))
+
+    if mat.shape[1] != len(cluster_info):
+        raise ValueError("cluster assignments do not match the number of columns in the matrix")
+    # A default RangeIndex carries no cell identity and is treated as a vector.
+    positional = isinstance(cluster_info.index, pd.RangeIndex) and cluster_info.index.equals(
+        pd.RangeIndex(len(cluster_info))
+    )
+    if not positional:
+        if not cluster_info.index.is_unique or not mat.columns.is_unique:
+            raise ValueError("cell IDs must be unique for metadata alignment")
+        if set(cluster_info.index) != set(mat.columns):
+            raise ValueError("metadata cell IDs do not match expression matrix columns")
+        cluster_info = cluster_info.reindex(mat.columns)
+    if isinstance(cluster_info.dtype, pd.CategoricalDtype):
+        cluster_info = cluster_info.cat.remove_unused_categories()
+    return list(cluster_info)
 
 
 def overcluster(mat: pd.DataFrame, cluster_id: dict[str, list], power: float = 0.15) -> dict[str, list]:
@@ -68,12 +79,14 @@ def average_clusters(
     Parameters mirror clustifyr's ``average_clusters()``. ``mat`` is a genes x
     cells expression matrix; ``metadata`` is either a vector of per-cell
     cluster assignments (aligned positionally with ``mat``'s columns) or a
-    DataFrame with ``cluster_col``.
+    DataFrame with ``cluster_col``. Indexed metadata is aligned by cell ID;
+    lists and metadata with a default RangeIndex are positional.
     """
     if cell_col is not None and isinstance(metadata, pd.DataFrame):
         wanted = list(metadata[cell_col])
         if list(mat.columns) != wanted:
             mat = mat[wanted]
+        metadata = metadata.set_index(cell_col, drop=False)
 
     cluster_ids = _cluster_ids_from_metadata(mat, metadata, cluster_col)
 

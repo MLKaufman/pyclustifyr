@@ -12,6 +12,11 @@ squinting required.
 
 Works on plain `pandas`/`numpy` matrices or directly on `AnnData` objects.
 
+Indexed metadata is matched to expression columns by cell ID, so reordering
+metadata rows does not change cluster scores. IDs must be unique and match the
+expression matrix. Lists and metadata with a default `RangeIndex` remain
+positional. Vector calls follow metadata row order.
+
 ## Installation
 
 Install directly from GitHub with [uv](https://docs.astral.sh/uv/):
@@ -259,6 +264,12 @@ ref_mat = get_ucsc_reference(
 | `plot.py` | matplotlib plotting: `plot_dims`, `plot_cor`, `plot_gene`, `plot_best_call`, `plot_cor_heatmap` |
 | `gsea.py` | Preranked GSEA: `run_gsea`, `calculate_pathway_gsea`, `gmt_to_list`, `plot_pathway_gsea` |
 | `cellbrowsers.py` | `get_ucsc_reference` — build a reference from a UCSC Cell Browser dataset |
+
+`permute_similarity()` counts tied null scores in the upper tail and returns
+`(1 + count(null >= observed)) / (n_perm + 1)`. This deliberately differs from
+R's strict-greater-than calculation: identical profiles yield p=1, and finite
+permutation runs never report p=0. Undefined observed or null scores yield
+missing p-values.
 
 ## Tests
 

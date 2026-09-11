@@ -108,7 +108,7 @@ def test_permutations_preserve_preprocessing(if_log, method):
                                 if_log=if_log, low_threshold=2, compute_method=method)
     shuffled = average_clusters(expr, groups[::-1], if_log=if_log, low_threshold=2)
     null_score = calc_similarity(shuffled, ref, method)
-    assert_frame_equal(result["p_val"], (null_score > observed).astype(float))
+    assert_frame_equal(result["p_val"], ((null_score >= observed).astype(float) * 2 + 1) / 3)
 
 
 def test_duplicate_pathway_genes_do_not_change_gsea():

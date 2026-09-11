@@ -278,8 +278,14 @@ def permute_similarity(
     low_threshold: int = 0,
     **kwargs,
 ) -> dict[str, pd.DataFrame]:
+    """Estimate upper-tail p-values as (1 + count(null >= observed)) / (n_perm + 1).
+
+    Undefined observed or null scores produce missing p-values.
+    """
     from .clusters import average_clusters
 
+    if not isinstance(n_perm, (int, np.integer)) or n_perm < 1:
+        raise ValueError("n_perm must be a positive integer")
     rng = rng or np.random.default_rng()
     ref_clust = list(ref_mat.columns)
     cluster_ids = list(cluster_ids)
@@ -298,6 +304,8 @@ def permute_similarity(
 
     sig_counts = np.zeros((len(sc_clust), len(ref_clust)), dtype=int)
     cluster_ids_arr = np.array(cluster_ids, dtype=object)
+    observed = assigned_score.to_numpy()
+    valid_scores = ~np.isnan(observed)
 
     for _ in range(n_perm):
         resampled = rng.permutation(cluster_ids_arr)
@@ -310,10 +318,14 @@ def permute_similarity(
             permuted_avg = expr_mat.loc[:, resampled]
 
         new_score = calc_similarity(permuted_avg, ref_mat, compute_method, rm0=rm0, **kwargs)
-        sig_counts += (new_score.to_numpy() > assigned_score.to_numpy()).astype(int)
+        null_scores = new_score.to_numpy()
+        valid_scores &= ~np.isnan(null_scores)
+        sig_counts += (null_scores >= observed).astype(int)
 
     assigned_score.index = sc_clust
     assigned_score.columns = ref_clust
-    p_val = pd.DataFrame(sig_counts / n_perm, index=sc_clust, columns=ref_clust)
+    pvalues = (sig_counts + 1) / (n_perm + 1)
+    pvalues[~valid_scores] = np.nan
+    p_val = pd.DataFrame(pvalues, index=sc_clust, columns=ref_clust)
 
     return {"score": assigned_score, "p_val": p_val}

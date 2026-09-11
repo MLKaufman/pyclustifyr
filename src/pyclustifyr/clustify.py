@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from .classify import call_consensus, call_to_metadata, cor_to_call, cor_to_call_rank
-from .clusters import average_clusters
+from .clusters import _cluster_ids_from_metadata, average_clusters
 from .genelist import binarize_expr, compare_lists, matrixize_markers
 from .markers import gene_pct_markerm, pos_neg_marker, pos_neg_select
 from .similarity import clustifyr_methods, get_similarity, permute_similarity
@@ -109,12 +109,7 @@ def clustify(
     ref_mat = ref_mat.loc[gene_constraints]
 
     if not per_cell:
-        if isinstance(metadata, pd.DataFrame):
-            if cluster_col is None:
-                raise ValueError("cluster_col is required when metadata is a DataFrame")
-            cluster_ids = list(metadata[cluster_col])
-        else:
-            cluster_ids = list(metadata)
+        cluster_ids = _cluster_ids_from_metadata(expr_mat, metadata, cluster_col)
         cluster_ids = ["orig.NA" if pd.isna(c) else c for c in cluster_ids]
     else:
         cluster_ids = list(expr_mat.columns)
@@ -158,6 +153,10 @@ def clustify(
     cluster_col = cluster_col or "cluster"
     if metadata is None:
         metadata = pd.DataFrame(index=input.columns)
+    elif isinstance(metadata, pd.Series) and not (
+        isinstance(metadata.index, pd.RangeIndex) and metadata.index.equals(pd.RangeIndex(len(metadata)))
+    ):
+        metadata = metadata.to_frame(name=cluster_col)
     elif not isinstance(metadata, pd.DataFrame):
         metadata = pd.DataFrame({cluster_col: list(metadata)}, index=input.columns)
 
@@ -270,6 +269,10 @@ def clustify_lists(
     cluster_col = cluster_col or "cluster"
     if metadata is None:
         metadata = pd.DataFrame(index=input.columns)
+    elif isinstance(metadata, pd.Series) and not (
+        isinstance(metadata.index, pd.RangeIndex) and metadata.index.equals(pd.RangeIndex(len(metadata)))
+    ):
+        metadata = metadata.to_frame(name=cluster_col)
     elif not isinstance(metadata, pd.DataFrame):
         metadata = pd.DataFrame({cluster_col: list(metadata)}, index=input.columns)
     df_temp = _marker_calls(res, metric, output_high, cluster_col, threshold)

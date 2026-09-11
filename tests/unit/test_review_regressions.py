@@ -79,7 +79,7 @@ def test_per_cell_permutation_null_changes_values(small_query, method):
         compute_method=method, rng=SwapEveryTime(),
     )
     np.testing.assert_allclose(result["score"], [[1, -1], [-1, 1]])
-    np.testing.assert_array_equal(result["p_val"], [[0, 1], [1, 0]])
+    np.testing.assert_allclose(result["p_val"], [[1 / 6, 1], [1, 1 / 6]])
 
 
 @pytest.mark.parametrize("method,stat", [("pearson", pearsonr), ("spearman", spearmanr), ("kendall", kendalltau)])
