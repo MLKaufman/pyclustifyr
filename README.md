@@ -176,7 +176,7 @@ scores = clustify_lists(
     markers,
     metadata=metadata,
     cluster_col="cluster",
-    metric="hyper",   # or "jaccard", "spearman", "pct", "posneg", "gsea", "consensus"
+    metric="hyper",   # or "jaccard", "rank_distance", "pct", "posneg", "gsea", "consensus"
 )
 ```
 
@@ -190,7 +190,7 @@ expands those calls to cells in metadata order. Consensus applies the supplied
 component methods where applicable.
 
 Marker binarization uses a strict `expression > cut` boundary. Missing marker
-entries are ignored. The rank-distance metric (`"spearman"`) requires at least
+entries are ignored. The rank-distance metric (`"rank_distance"`, alias `"spearman"`) requires at least
 two shared genes; comparisons with insufficient overlap are missing, and cells
 with no valid comparisons are unassigned. Hypergeometric scoring rejects
 invalid gene-universe sizes.
@@ -277,10 +277,25 @@ R's strict-greater-than calculation: identical profiles yield p=1, and finite
 permutation runs never report p=0. Undefined observed or null scores yield
 missing p-values.
 
+See [API migration notes](docs/api-migration.md) for changes before 1.0, including
+explicit permutation results and the sampling count/fraction contract.
+
 ## Tests
 
+The [CI workflow](.github/workflows/ci.yml) runs on pushes, pull requests, and
+manual dispatch. Its matrix covers Python 3.11–3.14 on Linux, macOS, and Windows.
+Each job runs the test suite with `uv.lock`, builds a source distribution and a
+wheel from that distribution, and installs the wheel into a separate environment
+with freshly resolved runtime dependencies. An
+[installed-package smoke check](scripts/smoke_install.py) runs outside the
+checkout with isolated Python imports and exercises classification, marker
+lists, AnnData file I/O, GSEA, and headless plotting. No R installation is needed.
+
+Run the locked test suite locally:
+
 ```bash
-uv run pytest
+uv sync --locked --group dev
+uv run --no-sync python -m pytest
 ```
 
 Tests validate numerical parity against the R package directly — most results

@@ -5,6 +5,8 @@ Python port of clustifyr's R/main.R (``clustify.default``).
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -34,7 +36,7 @@ def _marker_calls(scores, metric, output_high, cluster_col, threshold):
         if metric in ("hyper", "gsea"):
             with np.errstate(divide="ignore"):
                 scores = -np.log10(scores)
-        elif metric == "spearman":
+        elif metric in ("spearman", "rank_distance"):
             scores = scores.max().max() - scores
     # Undefined marker comparisons must not compete with valid zero scores.
     calls = cor_to_call(scores.fillna(-np.inf), cluster_col=cluster_col, threshold=threshold)
@@ -69,8 +71,9 @@ def clustify(
     exclude_genes: list | None = None,
     if_log: bool = True,
     rng=None,
+    return_pvalues: bool = False,
     **kwargs,
-) -> pd.DataFrame | list:
+) -> pd.DataFrame | list | dict[str, pd.DataFrame]:
     """Classify clusters (or single cells) by similarity to a reference matrix.
 
     ``input`` is a genes x cells expression matrix. ``metadata`` supplies
@@ -79,8 +82,20 @@ def clustify(
 
     Returns a clusters x cell-types similarity matrix by default, or a list of
     type calls per cell in metadata row order if ``vec_out=True``. Cluster
-    calls are repeated for their member cells.
+    calls are repeated for their member cells. With ``return_pvalues=True``
+    and positive ``n_perm``, return a score/p_val dictionary instead;
+    ``vec_out`` must be False. Score-only permutations are deprecated.
     """
+    if not isinstance(n_perm, (int, np.integer)) or isinstance(n_perm, (bool, np.bool_)) or n_perm < 0:
+        raise ValueError("n_perm must be a nonnegative integer")
+    if return_pvalues and (n_perm == 0 or vec_out):
+        raise ValueError("return_pvalues requires n_perm > 0 and vec_out=False")
+    if n_perm > 0 and not return_pvalues:
+        warnings.warn(
+            "n_perm without return_pvalues=True discards p-values and is deprecated; "
+            "use return_pvalues=True for a score/p_val dictionary or n_perm=0 for scores only",
+            FutureWarning, stacklevel=2,
+        )
     if compute_method not in clustifyr_methods:
         raise ValueError(f"{compute_method} correlation method not implemented")
 
@@ -143,6 +158,8 @@ def clustify(
             rng=rng,
             **kwargs,
         )
+        if return_pvalues:
+            return result
         res = result["score"]
 
     if verbose:
@@ -205,6 +222,12 @@ def clustify_lists(
     regardless of ``output_high``. Percentage, positive/negative, and consensus
     metrics return cluster scores; vector output expands calls to each cell.
     """
+    if metric not in {"hyper", "jaccard", "spearman", "rank_distance", "gsea", "pct", "posneg", "consensus"}:
+        raise ValueError(f"Unknown metric: {metric}")
+    if matrixize_kwargs and (marker_inmatrix or metric == "posneg"):
+        raise TypeError("marker conversion options require marker_inmatrix=False and metric != 'posneg'")
+    if details_out and metric not in {"hyper", "jaccard", "spearman", "rank_distance"}:
+        raise ValueError("details_out is supported only for hyper, jaccard, and rank_distance")
     if details_out and vec_out:
         raise ValueError("details_out and vec_out cannot both be True")
 

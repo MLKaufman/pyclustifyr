@@ -17,6 +17,31 @@ def _melt_cor_mat(cor_mat: pd.DataFrame, cluster_col: str) -> pd.DataFrame:
     return long
 
 
+def _collapse_column(value, default):
+    if value is False or value is None:
+        return None
+    if value is True:
+        return default
+    if isinstance(value, str) and value:
+        return value
+    raise ValueError("collapse_to_cluster must be False, None, True, or a grouping column name")
+
+
+def _metadata_for_calls(metadata, ids, id_col, group_col):
+    if metadata is None or group_col not in metadata.columns:
+        raise ValueError("metadata must contain the collapse grouping column")
+    # Indexed metadata is primary; a separate explicit ID column is also supported.
+    if not pd.Index(ids).isin(metadata.index).all() and id_col != group_col and id_col in metadata:
+        metadata = metadata.set_index(id_col, drop=False)
+    if not metadata.index.is_unique or metadata.index.hasnans:
+        raise ValueError("metadata cell IDs must be unique and nonmissing")
+    if not pd.Index(ids).isin(metadata.index).all():
+        raise ValueError("call cell IDs must match metadata")
+    if metadata.loc[pd.Index(ids).unique(), group_col].isna().any():
+        raise ValueError("collapse grouping labels must be nonmissing")
+    return metadata
+
+
 def cor_to_call(
     cor_mat: pd.DataFrame,
     metadata: pd.DataFrame | None = None,
@@ -33,6 +58,9 @@ def cor_to_call(
     without valid scores are unassigned with a missing ``r``.
     """
     cluster_col = cluster_col or "cluster"
+    group_col = _collapse_column(collapse_to_cluster, cluster_col)
+    if group_col is not None:
+        metadata = _metadata_for_calls(metadata, cor_mat.index, cluster_col, group_col)
     missing_rows = cor_mat.index[cor_mat.isna().all(axis=1)]
     correlation_matrix = cor_mat.fillna(-np.inf)
 
@@ -59,13 +87,14 @@ def cor_to_call(
     best.loc[missing, "r"] = np.nan
     result = best
 
-    if collapse_to_cluster is not False:
-        if metadata is None:
-            raise ValueError("metadata is required when collapse_to_cluster is set")
-        result = collapse_to_cluster_fn(result, metadata, cluster_col, threshold=threshold)
+    if group_col is not None:
+        result = collapse_to_cluster_fn(result, metadata, group_col, threshold=threshold)
+        if carry_r:
+            rejected = result["n"] == 0
+            result.loc[rejected, "type"] = unassigned_label
 
     if rename_prefix is not None:
-        if collapse_to_cluster is not False:
+        if group_col is not None:
             result = result.rename(
                 columns={"type": f"{rename_prefix}_type", "sum": f"{rename_prefix}_sum", "n": f"{rename_prefix}_n"}
             )
@@ -82,16 +111,19 @@ def collapse_to_cluster_fn(
     threshold: float = 0,
 ) -> pd.DataFrame:
     """From per-cell calls, take the highest-frequency call within each cluster."""
+    metadata = _metadata_for_calls(metadata, res.iloc[:, 0], res.columns[0], cluster_col)
     df = res.copy()
-    df = df.rename(columns={df.columns[0]: "rn"})
-    df["cluster"] = df["rn"].map(metadata[cluster_col])
-
-    grouped = df.groupby(["type", "cluster"], sort=False)["r"].agg(sum="sum", n="count").reset_index()
-    grouped = grouped[grouped["type"] != f"r<{threshold}, unassigned"]
-    grouped = grouped.sort_values(["n", "sum"], ascending=[False, False])
-    top = grouped.groupby("cluster", sort=False).head(1)
-    top = top.rename(columns={"cluster": cluster_col})
-    return top[[cluster_col, "type", "sum", "n"]].reset_index(drop=True)
+    # Use temporary column names independent of the requested grouping column.
+    df["_group"] = df.iloc[:, 0].map(metadata[cluster_col])
+    groups = pd.Index(df["_group"].drop_duplicates(), name=cluster_col)
+    eligible = df[df["r"].notna() & (df["r"] >= threshold)]
+    grouped = eligible.groupby(["type", "_group"], sort=False, observed=True)["r"].agg(sum="sum", n="count").reset_index()
+    grouped = grouped.sort_values(["n", "sum"], ascending=[False, False], kind="stable")
+    top = grouped.groupby("_group", sort=False).head(1).set_index("_group")
+    top = top.reindex(groups)
+    top["type"] = top["type"].fillna("unassigned")
+    top["n"] = top["n"].fillna(0).astype(int)
+    return top.rename_axis(cluster_col).reset_index()[[cluster_col, "type", "sum", "n"]]
 
 
 # Public alias matching clustifyr's exported name.
@@ -131,6 +163,9 @@ def cor_to_call_topn(
     topn: int = 2,
 ) -> pd.DataFrame:
     """Take the top ``topn`` reference-type calls per cluster/cell."""
+    group_col = _collapse_column(collapse_to_cluster, col)
+    if group_col is not None:
+        metadata = _metadata_for_calls(metadata, cor_mat.index, col, group_col)
     long = _melt_cor_mat(cor_mat, col)
     unassigned_label = f"r<{threshold}, unassigned"
     long.loc[long["r"] < threshold, "type"] = unassigned_label
@@ -138,13 +173,14 @@ def cor_to_call_topn(
     rank = long.groupby(col)["r"].rank(method="min", ascending=False)
     top = long[rank <= topn].reset_index(drop=True)
 
-    if collapse_to_cluster is not False:
-        if metadata is None:
-            raise ValueError("metadata is required when collapse_to_cluster is set")
-        merged = top.merge(metadata, on=col, how="left")
-        merged["type2"] = merged[collapse_to_cluster]
-        grouped = merged.groupby(["type", "type2"], sort=False)["r"].agg(sum="sum", n="count").reset_index()
-        grouped = grouped[grouped["type"] != unassigned_label]
+    if group_col is not None:
+        merged = top.copy()
+        for name in metadata.columns:
+            if name not in merged.columns:
+                merged[name] = merged[col].map(metadata[name])
+        merged["type2"] = merged[col].map(metadata[group_col])
+        eligible = merged[merged["r"].notna() & (merged["r"] >= threshold)]
+        grouped = eligible.groupby(["type", "type2"], sort=False, observed=True)["r"].agg(sum="sum", n="count").reset_index()
         grouped = grouped.sort_values(["n", "sum"], ascending=[False, False])
         top_per_type2 = grouped.groupby("type2", sort=False).head(topn)
         joined = top_per_type2.merge(

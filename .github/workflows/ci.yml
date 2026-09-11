@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  MPLBACKEND: Agg
+  UV_NO_PROGRESS: '1'
+
+jobs:
+  test:
+    name: Python ${{ matrix.python }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ['3.11', '3.12', '3.13', '3.14']
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: '0.12.13'
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+          cache-suffix: ${{ matrix.python }}
+      - name: Install locked development environment
+        run: uv sync --locked --group dev
+      - name: Run tests against committed fixtures (no R setup needed)
+        run: uv run --no-sync python -m pytest -q
+      - name: Build source distribution and wheel from it
+        # Exercise the declared backend, even when the uv CLI version differs.
+        run: uv build --no-sources --force-pep517
+      - name: Install wheel in a clean environment
+        # Resolve runtime dependencies independently of the development lockfile.
+        run: |
+          uv venv "$RUNNER_TEMP/wheel-env"
+          uv pip install --python "$RUNNER_TEMP/wheel-env" dist/*.whl
+          uv pip check --python "$RUNNER_TEMP/wheel-env"
+      - name: Smoke test installed package outside the checkout
+        run: |
+          cd "$RUNNER_TEMP"
+          uv run --no-project --python "$RUNNER_TEMP/wheel-env" python -I "$GITHUB_WORKSPACE/scripts/smoke_install.py"

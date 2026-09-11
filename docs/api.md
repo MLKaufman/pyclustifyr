@@ -47,8 +47,8 @@ also aligned. Lists and metadata with the default `RangeIndex(0, n)` are
 positional. Indexed IDs must be unique and match expression columns; mismatches
 raise `ValueError`. An explicit `cell_col` in `average_clusters` takes precedence
 over the metadata index. Lower-level functions accepting `cluster_ids` or
-`clusters` expect positional vectors; `downsample_matrix` also uses metadata
-positionally. Per-cell calls are joined back using the metadata index.
+`clusters` expect positional vectors; `downsample_matrix` aligns indexed
+metadata using the same rules as classification. Per-cell calls are joined back using the metadata index.
 
 **Expression scale.** For mean aggregation, `if_log=True` means input values are
 natural-log `log1p` values: `expm1` is applied before averaging. The mean is then
@@ -99,6 +99,7 @@ clustify(
     exclude_genes: list | None = None,
     if_log: bool = True,
     rng = None,
+    return_pvalues: bool = False,
     **kwargs,
 )
 ```
@@ -115,12 +116,14 @@ intersection and `exclude_genes` removes genes from it.
 | `pseudobulk_method`, `if_log` | Aggregation method and input scale; see `average_clusters`. |
 | `rm0` | Treat query zeros as missing and use pairwise complete observations. Supported only for Pearson, Spearman, Kendall; other methods raise `ValueError`. |
 | `low_threshold_cell` | Exclude clusters with fewer than this number of cells; zero disables exclusion. |
-| `n_perm`, `rng` | Run permutations when `n_perm > 0`. This entry point returns the observed score matrix only, discarding permutation p-values. Use the submodule `permute_similarity` to retrieve p-values. |
+| `n_perm`, `rng`, `return_pvalues` | With `n_perm > 0` and `return_pvalues=True`, return a dictionary containing `score` and `p_val` DataFrames. Requires `vec_out=False`. The legacy score-only `n_perm > 0` route emits `FutureWarning`; use `n_perm=0` for scores only. |
 | `vec_out`, `threshold`, `rename_prefix` | Convert scores to calls and expand to metadata rows. `threshold="auto"` uses 75% of the global maximum score, rounded to two decimals. These options do not change the matrix when `vec_out=False`. |
 | `verbose` | Print gene count and output dimensions. Small-cluster warnings are separate from verbosity. |
 | `**kwargs` | Forwarded to similarity computation; `total_reads` and `max_kl` apply to KL scoring. This is not a general preprocessing-options dictionary. |
 
-**Returns:** clusters × reference types, or cells × reference types with
+**Returns:** with `return_pvalues=True`, `{"score": scores, "p_val": pvalues}`
+with matching labels and the same +1/tie handling as `permute_similarity`.
+Otherwise, clusters × reference types, or cells × reference types with
 `per_cell=True`; `vec_out=True` returns a list of per-cell calls. Raises
 `ValueError` for unsupported methods, missing required metadata, unmatched cell
 IDs, empty shared-gene sets, or empty query/reference columns. Missing
@@ -157,7 +160,10 @@ clustify_lists(
 Compare `input` expression against `marker` lists. `marker_inmatrix=True`
 expects an already wide marker-list table; `False` runs `matrixize_markers`
 (except for `posneg`). `**matrixize_kwargs` are arguments to that converter,
-not arbitrary scoring/GSEA options.
+not arbitrary scoring/GSEA options. Conversion options raise `TypeError` when
+conversion is disabled (`marker_inmatrix=True` or `metric="posneg"`). Unknown
+metric names are rejected. `details_out` is supported only for hyper, jaccard,
+and rank_distance/spearman.
 
 `metadata`, `cluster_col`, `if_log`, `low_threshold_cell`, and `verbose` follow
 the classification conventions. `topn` selects top-expression genes using
@@ -170,7 +176,7 @@ metrics, not cluster-only consensus/pct/posneg workflows.
 |---|---|
 | `hyper` | Hypergeometric upper-tail p-values, Holm-adjusted across reference types within each query; uses `genome_n`. Default score is `-log10(p)`. |
 | `jaccard` | Intersection/union of selected genes and each marker list. |
-| `spearman` | **Rank-order distance, not Spearman's correlation coefficient.** Sums absolute differences in shared-gene order; fewer than two shared genes gives NaN. Default score is global maximum distance minus distance. |
+| `rank_distance` (alias `spearman`) | **Rank-order distance, not Spearman's correlation coefficient.** Sums absolute differences in shared-gene order; fewer than two shared genes gives NaN. Default score is global maximum distance minus distance. |
 | `pct` | Mean fraction of cells detecting each marker gene, then summarized per cluster. Always produces cluster scores. |
 | `posneg` | Correlate cells with a numeric positive/negative marker reference and average by cluster. Wide gene-name lists are converted using `pos_neg_marker`. |
 | `gsea` | GSEA p-values on the binarized query, transformed to `-log10(p)` by default. This route currently uses 1,000 permutations and does not expose an `rng` argument. |
@@ -187,7 +193,7 @@ call per metadata row. `rename_prefix` controls output names during conversion.
 Consensus does not apply a separate similarity threshold to its final rank table.
 
 **Returns:** query × reference scores; a consensus call table; or per-cell
-calls when `vec_out=True`. For hyper/jaccard/spearman, `details_out=True` returns
+calls when `vec_out=True`. For hyper/jaccard/rank_distance (or spearman), `details_out=True` returns
 `{"res": scores, "details": overlap_strings}` with comma-separated intersecting
 genes. `details_out` and `vec_out` cannot both be true. Missing marker entries
 are ignored. Invalid hypergeometric universe sizes raise `ValueError`.
@@ -232,6 +238,8 @@ a similarity matrix when `obj_out=False`; a call list when `vec_out=True`
 (takes precedence over `obj_out`). No correlation matrix is stored in `.uns`.
 Sparse expression is densified before feature selection: account for the full
 cells × genes memory cost. The original AnnData is not modified.
+`return_pvalues=True` is forwarded to `clustify` and returns its dictionary;
+it requires `n_perm > 0`, `obj_out=False`, and `vec_out=False`.
 
 
 ### clustify_lists_adata
@@ -316,9 +324,11 @@ write_meta(
 ```
 
 Return a copy of `adata` with `.obs` replaced by `meta`. This replaces the
-entire metadata table, not selected columns. Supply one row per cell, in the
-same cell order; this function does not align rows by ID. AnnData validates
-length. The input AnnData remains unchanged.
+entire metadata table, not selected columns. Supply one row per cell with
+unique IDs matching `adata.obs_names`. Rows are aligned to observation order;
+missing, extra, or duplicate IDs raise `ValueError`. Expression and cell IDs
+are preserved. Both the input AnnData and supplied metadata remain independent
+of the returned metadata table.
 
 
 ## Calls and metadata
@@ -350,12 +360,15 @@ column order. `carry_r=True` changes the unassigned text to
 `"r<THRESHOLD, unassigned"`. Returned row order need not match matrix row order;
 join by the identifier column.
 
-`rename_prefix` renames type and score columns. With `collapse_to_cluster`
-other than `False`, `metadata` is required: row IDs must be cell IDs in its
-index, and grouping uses **`cluster_col`**. In this function a string supplied
-to `collapse_to_cluster` acts as an enable flag, not a separate grouping name.
-Collapsed output is `[cluster_col, "type", "sum", "n"]`; prefixing renames
-`type`, `sum`, and `n`.
+`rename_prefix` renames type and score columns. `collapse_to_cluster=False`
+or `None` disables collapse; `True` groups by `cluster_col`, and a string
+names the actual metadata grouping column. Metadata is matched by its unique
+cell-ID index (or a separate explicit ID column named `cluster_col` if the
+index does not match). Missing IDs/groups raise `ValueError`.
+Collapsed output is `[grouping_column, "type", "sum", "n"]`; prefixing renames
+`type`, `sum`, and `n`. Only nonmissing scores at or above the threshold vote.
+Groups with no eligible cells remain unassigned with `n=0` and missing `sum`.
+`carry_r` changes presentation only, never eligibility or the winning type.
 
 
 ### cor_to_call_rank
@@ -396,12 +409,13 @@ sorted by identifier and descending score. Ranking uses minimum ranks for ties,
 so more than `topn` results can survive. Scores below numeric `threshold` are
 labeled `"r<THRESHOLD, unassigned"`.
 
-With `collapse_to_cluster` naming a metadata grouping column, `metadata` must
-also contain the cell/query ID column `col`; this path merges on that column,
-not automatically on the metadata index. It counts calls per type/group,
-selects up to `topn` types per group by count then score sum, and joins them
-back to IDs. Expanded output includes `type2` (group), `sum`, `n`, and metadata
-columns. Use the default `False` for an ordinary top-call table.
+`collapse_to_cluster` follows the same convention as `cor_to_call`: `True`
+uses `col` as the grouping column, a string names another group, and `False`
+or `None` disables collapse. Match cell IDs using the metadata index, with a
+separate explicit `col` ID column as a fallback. Eligible calls have nonmissing
+scores at or above `threshold`. Count calls per type/group, select up to `topn`
+types by count then score sum, and join back to IDs. Expanded output includes
+`type2` (group), `sum`, `n`, and metadata columns.
 
 
 ### call_to_metadata
@@ -445,10 +459,10 @@ first column plus `type` and `r`; metadata is indexed by those cell IDs.
 cluster, breaking count ties by score sum. Returns
 `[cluster_col, "type", "sum", "n"]`.
 
-The `threshold` argument only identifies the formatted unassigned label
-`"r<THRESHOLD, unassigned"` to exclude; it does not re-threshold numeric scores.
-For that exclusion behavior, generate input using `cor_to_call(...,
-carry_r=True, threshold=...)`.
+The numeric `threshold` excludes scores below it; missing scores never vote.
+Type labels are not parsed to determine eligibility. Groups represented in
+`res` with no eligible calls remain `unassigned`, with `n=0` and missing `sum`.
+Grouping metadata must have unique matching cell IDs and nonmissing group labels.
 
 
 ### call_consensus
@@ -665,10 +679,10 @@ Hypergeometric p-values are Holm-adjusted within each query. Jaccard requires
 nonempty unions. Rank-distance comparisons need at least two shared genes.
 GSEA calls use 1,000 permutations.
 
-Legacy behavior: if the **first query column** has more than two distinct
-values and the metric is not GSEA, the method switches to rank-distance
-`"spearman"`. Supply genuinely binary input for overlap tests, or request
-`"spearman"` explicitly for ranked/nonbinary input. Invalid hypergeometric
+Explicit metrics are never inferred or replaced. Hyper/Jaccard require every
+query value to be 0 or 1; ranked or missing values raise `ValueError`. Request
+`"rank_distance"` explicitly for ranked input (`"spearman"` remains a compatibility
+alias for the same distance). Unknown metrics and invalid hypergeometric
 universe sizes raise `ValueError`.
 
 
@@ -902,24 +916,33 @@ supplied values directly. Returns genes × (original types + pair types).
 ```text
 downsample_matrix(
     mat: pd.DataFrame,
-    n: float = 1,
+    n: int | None = None,
     keep_cluster_proportions: bool = True,
     metadata = None,
     cluster_col: str = 'cluster',
     rng: np.random.Generator | None = None,
+    *,
+    frac: float | None = None,
+    per_cluster: bool = False,
 )
 ```
 
-Sample columns of `mat` without replacement using `rng`. For `0 <= n < 1`,
-`n` is a fraction and counts are rounded down. For `n >= 1`, `int(n)` is an
-absolute count. With `keep_cluster_proportions=False`, sample that fraction or
-count globally. With true, require `metadata` and sample the fraction or count
-**separately in every cluster**. Thus `n=1` means one cell per cluster, not
-100% of cells; absolute counts do not preserve original proportions.
+Sample columns without replacement using `rng`. Supply exactly one of:
 
-Metadata is positional here, including DataFrames using `cluster_col`; align
-it to matrix columns before calling. Returns the selected matrix columns in
-sampling order. Requesting more cells than available raises a NumPy error.
+- `n`: a nonnegative integer total cell count.
+- `frac`: a finite fraction in [0, 1]; target count is `floor(frac * total_cells)`.
+
+With `keep_cluster_proportions=False`, sample globally. With true, require
+metadata and allocate the exact total across clusters proportionally using
+largest remainders. Fractional ties go to clusters in first-seen expression
+column order. Set `per_cluster=True` with `n` to select that many cells from
+each cluster instead; this requires `keep_cluster_proportions=True`.
+
+Indexed metadata is aligned by cell ID; default RangeIndex/plain vectors remain
+positional. Invalid counts/fractions, missing assignments, nonunique cell IDs,
+mismatched metadata, and counts exceeding available cells raise `ValueError`.
+Returns the selected columns in sampling order. `n=1` now means one cell total;
+use `frac=1` for all cells or `n=1, per_cluster=True` for one cell per cluster.
 
 
 ### calc_distance
@@ -967,14 +990,16 @@ calc_similarity(
 ```
 
 Compare columns of `query_mat` and `ref_mat`; returns query columns × reference
-columns. Supply the same gene rows in the same order: correlation/cosine paths
-operate positionally and do not align gene names. KL scoring intersects genes
-internally. Prefer `clustify` when automatic shared-gene selection is desired.
+columns. Every metric intersects gene IDs in query order and aligns both
+matrices to that intersection. Gene IDs must be unique and nonmissing; no
+shared genes raises `ValueError`. Extra genes are excluded consistently.
 
 `compute_method` is one of `clustifyr_methods`. `rm0=True` removes query zeros
 and missing values pairwise for Pearson/Spearman/Kendall; it is rejected for
 cosine/KL. Without it, missing data can propagate to scores. `**kwargs` supplies
-KL parameters (`if_log`, `total_reads`, `max_kl`). Constant vectors can return
+KL parameters (`if_log`, `total_reads`, `max_kl`). Unknown or inapplicable
+keyword arguments raise `TypeError`, including options for correlation/cosine.
+Constant vectors can return
 NaN correlations; no calls or thresholds are applied.
 
 
@@ -1379,7 +1404,7 @@ permute_similarity(
 
 Return `{"score": observed_scores, "p_val": permutation_pvalues}` with matching
 clusters/cells × reference-types labels. `expr_mat` and `ref_mat` must already
-share aligned genes. `cluster_ids` is positional cluster membership, or the
+have unique gene IDs; shared genes are aligned by each similarity calculation. `cluster_ids` is positional cluster membership, or the
 actual expression column names with `per_cell=True`.
 
 `compute_method`, `pseudobulk_method`, `rm0`, `if_log`, `low_threshold`, and
@@ -1408,7 +1433,8 @@ vector_similarity(
 Convert `vec1`/`vec2` to numeric arrays, require equal shapes, and dispatch
 `compute_method="cosine"` or `"kl_divergence"`. `**kwargs` goes to
 `kl_divergence`; cosine takes no additional parameters. Returns a float;
-unsupported methods or mismatched shapes raise `ValueError`. Supply aligned
+unsupported methods or mismatched shapes raise `ValueError`; unknown or
+inapplicable keywords raise `TypeError`. Supply aligned
 one-dimensional feature vectors.
 
 

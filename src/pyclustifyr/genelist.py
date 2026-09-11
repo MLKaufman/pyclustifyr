@@ -120,9 +120,12 @@ def compare_lists(
     enough for the compared sets. Rank-distance ("spearman") comparisons
     with fewer than two shared genes return NaN rather than a perfect match.
     """
-    unique_vals = pd.unique(bin_mat.iloc[:, 0])
-    if len(unique_vals) > 2 and metric != "gsea":
+    if metric not in {"hyper", "jaccard", "spearman", "rank_distance", "gsea"}:
+        raise ValueError(f"Unknown metric: {metric}")
+    if metric == "rank_distance":
         metric = "spearman"
+    if metric in {"hyper", "jaccard"} and not bin_mat.isin([0, 1]).all().all():
+        raise ValueError("hyper/jaccard require binary input (0/1); use rank_distance for ranked input")
 
     marker_cols = list(marker_mat.columns)
     bin_cols = list(bin_mat.columns)

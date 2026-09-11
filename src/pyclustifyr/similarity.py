@@ -12,6 +12,25 @@ from scipy.stats import kendalltau, rankdata
 clustifyr_methods = ("pearson", "spearman", "cosine", "kl_divergence", "kendall")
 
 
+def _validate_similarity_options(compute_method, kwargs):
+    if compute_method not in clustifyr_methods:
+        raise ValueError(f"{compute_method} similarity method not implemented")
+    allowed = {"if_log", "total_reads", "max_kl"} if compute_method == "kl_divergence" else set()
+    unknown = set(kwargs) - allowed
+    if unknown:
+        raise TypeError(f"Unsupported options for {compute_method}: {', '.join(sorted(unknown))}")
+
+
+def _align_features(query_mat, ref_mat):
+    for mat in (query_mat, ref_mat):
+        if not mat.index.is_unique or mat.index.hasnans:
+            raise ValueError("gene IDs must be unique and nonmissing")
+    shared = query_mat.index.intersection(ref_mat.index, sort=False)
+    if shared.empty:
+        raise ValueError("query and reference have no shared genes")
+    return query_mat.loc[shared], ref_mat.loc[shared]
+
+
 def _pearson_cross(x: np.ndarray, y: np.ndarray) -> np.ndarray:
     """Column-wise Pearson correlation between columns of x and columns of y."""
     xc = x - np.nanmean(x, axis=0, keepdims=True)
@@ -106,6 +125,7 @@ def _freqs_shrink(counts: np.ndarray) -> np.ndarray:
 
 
 def vector_similarity(vec1: np.ndarray, vec2: np.ndarray, compute_method: str, **kwargs) -> float:
+    _validate_similarity_options(compute_method, kwargs)
     vec1 = np.asarray(vec1, dtype=float)
     vec2 = np.asarray(vec2, dtype=float)
     if vec1.shape != vec2.shape:
@@ -131,6 +151,8 @@ def calc_similarity(
     ``rm0`` treats query zeros as missing and uses pairwise complete
     observations. It supports Pearson, Spearman, and Kendall correlations.
     """
+    _validate_similarity_options(compute_method, kwargs)
+    query_mat, ref_mat = _align_features(query_mat, ref_mat)
     sc_clust = list(query_mat.columns)
     ref_clust = list(ref_mat.columns)
 

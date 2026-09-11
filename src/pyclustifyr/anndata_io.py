@@ -50,9 +50,13 @@ def object_data(
 
 
 def write_meta(adata: ad.AnnData, meta: pd.DataFrame) -> ad.AnnData:
-    """Return a copy of ``adata`` with ``.obs`` replaced by ``meta``."""
+    """Return a copy with metadata aligned by unique, matching observation IDs."""
+    if not adata.obs_names.is_unique or not meta.index.is_unique:
+        raise ValueError("metadata and AnnData cell IDs must be unique")
+    if (len(meta) != adata.n_obs or not adata.obs_names.isin(meta.index).all()):
+        raise ValueError("metadata cell IDs must match AnnData observation IDs")
     out = adata.copy()
-    out.obs = meta
+    out.obs = meta.reindex(adata.obs_names).copy(deep=True)
     return out
 
 
@@ -85,14 +89,17 @@ def clustify_adata(
     threshold: float | str = "auto",
     per_cell: bool = False,
     **kwargs,
-) -> ad.AnnData | pd.DataFrame | list:
+) -> ad.AnnData | pd.DataFrame | list | dict[str, pd.DataFrame]:
     """Classify an AnnData object's clusters (or cells) against a reference matrix.
 
     By default (``obj_out=True``), returns a copy of ``adata`` with the call
     (and correlation) written into ``.obs``. Set ``obj_out=False`` to get the
     raw similarity matrix instead, matching ``clustify(..., vec_out=False)``
-    on a plain matrix.
+    on a plain matrix. ``return_pvalues=True`` also requires ``obj_out=False``
+    and ``vec_out=False``, returning the score/p_val dictionary from clustify.
     """
+    if kwargs.get("return_pvalues", False) and (obj_out or vec_out):
+        raise ValueError("return_pvalues requires obj_out=False and vec_out=False")
     expr = object_data(adata, "data", layer=layer)
     metadata = object_data(adata, "meta.data")
 

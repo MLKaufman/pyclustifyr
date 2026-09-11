@@ -248,34 +248,64 @@ def make_comb_ref(ref_mat: pd.DataFrame, if_log: bool = True, sep: str = "_and_"
 
 def downsample_matrix(
     mat: pd.DataFrame,
-    n: float = 1,
+    n: int | None = None,
     keep_cluster_proportions: bool = True,
     metadata=None,
     cluster_col: str = "cluster",
     rng: np.random.Generator | None = None,
+    *,
+    frac: float | None = None,
+    per_cluster: bool = False,
 ) -> pd.DataFrame:
-    """Randomly subsample columns (cells), optionally preserving per-cluster proportions."""
-    rng = rng or np.random.default_rng()
+    """Sample exactly n cells or floor(frac * total) cells without replacement.
 
+    Proportional sampling uses largest remainders, with ties in first-seen
+    cluster order. per_cluster=True instead requests n cells from each group.
+    Indexed metadata is aligned by cell ID; plain vectors remain positional.
+    """
+    if (n is None) == (frac is None):
+        raise ValueError("specify exactly one of n or frac")
+    if n is not None and (not isinstance(n, (int, np.integer)) or isinstance(n, (bool, np.bool_)) or n < 0):
+        raise ValueError("n must be a nonnegative integer; use frac for a fraction")
+    if frac is not None and (not isinstance(frac, (int, float, np.number)) or isinstance(frac, (bool, np.bool_))
+                             or not np.isfinite(frac) or not 0 <= frac <= 1):
+        raise ValueError("frac must be a finite number between 0 and 1")
+    if per_cluster and (frac is not None or not keep_cluster_proportions):
+        raise ValueError("per_cluster requires n and keep_cluster_proportions=True")
+    if not mat.columns.is_unique or mat.columns.hasnans:
+        raise ValueError("cell IDs must be unique and nonmissing")
+    target = int(n) if n is not None else int(np.floor(len(mat.columns) * frac))
+    if not per_cluster and target > len(mat.columns):
+        raise ValueError("requested count exceeds available cells")
+    rng = rng if rng is not None else np.random.default_rng()
     if not keep_cluster_proportions:
-        n_int = int(mat.shape[1] * n) if n < 1 else int(n)
-        chosen = rng.choice(mat.columns.to_numpy(), size=n_int, replace=False)
-        return mat[list(chosen)]
-
-    if isinstance(metadata, pd.DataFrame):
-        cluster_ids = list(metadata[cluster_col])
+        return mat.loc[:, rng.choice(mat.columns.to_numpy(), size=target, replace=False)]
+    if metadata is None:
+        raise ValueError("metadata is required for sampling by cluster")
+    cluster_ids = _cluster_ids_from_metadata(mat, metadata, cluster_col)
+    if pd.isna(cluster_ids).any():
+        raise ValueError("cluster assignments must be nonmissing")
+    groups = {}
+    for cell, group in zip(mat.columns, cluster_ids):
+        groups.setdefault(group, []).append(cell)
+    sizes = np.array([len(cells) for cells in groups.values()], dtype=int)
+    if per_cluster:
+        if (sizes < target).any():
+            raise ValueError("requested count exceeds cells in a cluster")
+        counts = np.full(len(sizes), target, dtype=int)
+    elif len(sizes):
+        quotas = sizes * (target / sizes.sum())
+        counts = np.floor(quotas).astype(int)
+        remainder = target - int(counts.sum())
+        order = np.argsort(-(quotas - counts), kind="stable")
+        counts[order[:remainder]] += 1
     else:
-        cluster_ids = list(metadata)
-
-    groups: dict[object, list] = {}
-    for col, cid in zip(mat.columns, cluster_ids):
-        groups.setdefault(cid, []).append(col)
-
-    chosen_all = []
-    for cid, cols in groups.items():
-        n_this = int(len(cols) * n) if n < 1 else int(n)
-        chosen_all.extend(rng.choice(cols, size=n_this, replace=False))
-    return mat[chosen_all]
+        counts = np.array([], dtype=int)
+    chosen = []
+    for cells, count in zip(groups.values(), counts):
+        # Sampling positions preserves arbitrary cell-ID types.
+        chosen.extend(cells[i] for i in rng.choice(len(cells), size=int(count), replace=False))
+    return mat.loc[:, chosen]
 
 
 def calc_distance(
