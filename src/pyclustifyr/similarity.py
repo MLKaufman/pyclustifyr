@@ -125,16 +125,24 @@ def calc_similarity(
     rm0: bool = False,
     **kwargs,
 ) -> pd.DataFrame:
-    """Compute a similarity/correlation matrix between columns of two matrices."""
+    """Compute a similarity/correlation matrix between columns of two matrices.
+
+    ``rm0`` treats query zeros as missing and uses pairwise complete
+    observations. It supports Pearson, Spearman, and Kendall correlations.
+    """
     sc_clust = list(query_mat.columns)
     ref_clust = list(ref_mat.columns)
 
     if rm0:
+        if compute_method not in ("pearson", "spearman", "kendall"):
+            raise ValueError("rm0 is supported only for pearson, spearman, and kendall")
         q = query_mat.to_numpy(dtype=float).copy()
         q[q == 0] = np.nan
         r = ref_mat.to_numpy(dtype=float)
         if compute_method == "spearman":
             score = _pairwise_complete_spearman(q, r)
+        elif compute_method == "kendall":
+            score = _pairwise_complete_kendall(q, r)
         else:
             score = _pairwise_complete_pearson(q, r)
         return pd.DataFrame(score, index=sc_clust, columns=ref_clust)
@@ -172,8 +180,8 @@ def _pairwise_complete_pearson(x: np.ndarray, y: np.ndarray) -> np.ndarray:
     n_x, n_y = x.shape[1], y.shape[1]
     out = np.full((n_x, n_y), np.nan)
     for i in range(n_x):
-        mask = ~np.isnan(x[:, i])
         for j in range(n_y):
+            mask = ~np.isnan(x[:, i]) & ~np.isnan(y[:, j])
             xv, yv = x[mask, i], y[mask, j]
             if xv.size < 2:
                 continue
@@ -185,12 +193,22 @@ def _pairwise_complete_spearman(x: np.ndarray, y: np.ndarray) -> np.ndarray:
     n_x, n_y = x.shape[1], y.shape[1]
     out = np.full((n_x, n_y), np.nan)
     for i in range(n_x):
-        mask = ~np.isnan(x[:, i])
         for j in range(n_y):
+            mask = ~np.isnan(x[:, i]) & ~np.isnan(y[:, j])
             xv, yv = x[mask, i], y[mask, j]
             if xv.size < 2:
                 continue
             out[i, j] = np.corrcoef(rankdata(xv), rankdata(yv))[0, 1]
+    return out
+
+
+def _pairwise_complete_kendall(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    out = np.full((x.shape[1], y.shape[1]), np.nan)
+    for i in range(x.shape[1]):
+        for j in range(y.shape[1]):
+            mask = ~np.isnan(x[:, i]) & ~np.isnan(y[:, j])
+            if mask.sum() >= 2:
+                out[i, j] = kendalltau(x[mask, i], y[mask, j]).statistic
     return out
 
 
@@ -281,7 +299,7 @@ def permute_similarity(
         if not per_cell:
             permuted_avg = average_clusters(expr_mat, list(resampled), method=pseudobulk_method)
         else:
-            permuted_avg = expr_mat.set_axis(resampled, axis=1)
+            permuted_avg = expr_mat.loc[:, resampled]
 
         new_score = calc_similarity(permuted_avg, ref_mat, compute_method, rm0=rm0, **kwargs)
         sig_counts += (new_score.to_numpy() > assigned_score.to_numpy()).astype(int)

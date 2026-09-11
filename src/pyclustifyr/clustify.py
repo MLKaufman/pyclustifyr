@@ -128,6 +128,12 @@ def clustify(
     if not vec_out:
         return res
 
+    cluster_col = cluster_col or "cluster"
+    if metadata is None:
+        metadata = pd.DataFrame(index=input.columns)
+    elif not isinstance(metadata, pd.DataFrame):
+        metadata = pd.DataFrame({cluster_col: list(metadata)}, index=input.columns)
+
     df_temp = cor_to_call(res, metadata=metadata, cluster_col=cluster_col, threshold=threshold)
     df_temp_full = call_to_metadata(
         df_temp, metadata=metadata, cluster_col=cluster_col, per_cell=per_cell, rename_prefix=rename_prefix
@@ -157,14 +163,21 @@ def clustify_lists(
     input_markers: bool = False,
     details_out: bool = False,
     **matrixize_kwargs,
-) -> pd.DataFrame | list:
+) -> pd.DataFrame | list | dict[str, pd.DataFrame]:
     """Classify clusters (or cells) by overlap with reference marker gene lists.
 
     ``metric`` selects the scoring method: ``"hyper"`` (hypergeometric
     enrichment, default), ``"jaccard"``, ``"spearman"``, ``"pct"`` (percent of
     cells expressing each marker set), ``"posneg"`` (positive/negative marker
     scoring), or ``"consensus"`` (combines hyper/jaccard/pct/posneg ranks).
+
+    For hyper/jaccard/spearman, ``details_out=True`` returns a dictionary
+    containing score (``res``) and overlapping-gene (``details``) matrices.
+    It cannot be combined with ``vec_out=True``.
     """
+    if details_out and vec_out:
+        raise ValueError("details_out and vec_out cannot both be True")
+
     if metric in ("posneg", "pct"):
         per_cell = True
     if input_markers:
@@ -207,8 +220,9 @@ def clustify_lists(
             marker = pos_neg_marker(marker)
         res = pos_neg_select(input_avg, marker, metadata, cluster_col=cluster_col)
 
+    scores = res["res"] if isinstance(res, dict) else res
     if verbose:
-        print(f"similarity computation completed, matrix of {res.shape[0]} x {res.shape[1]}, preparing output")
+        print(f"similarity computation completed, matrix of {scores.shape[0]} x {scores.shape[1]}, preparing output")
 
     if not vec_out:
         return res

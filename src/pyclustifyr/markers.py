@@ -166,15 +166,14 @@ def ref_feature_select(
     rm_lowvar: bool = True,
 ) -> list:
     """Select the top ``n`` most variable (or most correlated) genes."""
+    variances = mat.var(axis=1, ddof=1).sort_values(ascending=False)
     if rm_lowvar:
-        variances = mat.var(axis=1, ddof=1)
-        variances = variances.sort_values(ascending=False)
         half = len(variances) // 2
         top_half = variances.iloc[:half]
         mat = mat.loc[top_half.index]
         v2 = top_half
     else:
-        v2 = None
+        v2 = variances
 
     if mode == "cor":
         cor_mat = mat.T.corr(method="spearman").to_numpy()

@@ -20,7 +20,7 @@ def _melt_cor_mat(cor_mat: pd.DataFrame, cluster_col: str) -> pd.DataFrame:
 def cor_to_call(
     cor_mat: pd.DataFrame,
     metadata: pd.DataFrame | None = None,
-    cluster_col: str = "cluster",
+    cluster_col: str | None = "cluster",
     collapse_to_cluster: str | bool = False,
     threshold: float | str = 0,
     rename_prefix: str | None = None,
@@ -31,6 +31,7 @@ def cor_to_call(
     Ties are marked with a ``-CLASH!`` suffix on the type, matching R's
     ``cor_to_call()``.
     """
+    cluster_col = cluster_col or "cluster"
     correlation_matrix = cor_mat.fillna(0)
 
     if threshold == "auto":
@@ -77,7 +78,7 @@ def collapse_to_cluster_fn(
     """From per-cell calls, take the highest-frequency call within each cluster."""
     df = res.copy()
     df = df.rename(columns={df.columns[0]: "rn"})
-    df["cluster"] = list(metadata[cluster_col])
+    df["cluster"] = df["rn"].map(metadata[cluster_col])
 
     grouped = df.groupby(["type", "cluster"], sort=False)["r"].agg(sum="sum", n="count").reset_index()
     grouped = grouped[grouped["type"] != f"r<{threshold}, unassigned"]
@@ -159,7 +160,11 @@ def call_to_metadata(
     per_cell: bool = False,
     rename_prefix: str | None = None,
 ) -> pd.DataFrame:
-    """Left-join a call table (e.g. output of ``cor_to_call``) onto metadata."""
+    """Left-join a call table onto metadata.
+
+    Per-cell calls use the metadata index as the cell identifier; cluster
+    calls use ``cluster_col``. Metadata row order is preserved.
+    """
     df_temp = res.copy()
     if rename_prefix is not None:
         df_temp = df_temp.rename(columns={"type": f"{rename_prefix}_type", "r": f"{rename_prefix}_r"})
@@ -175,17 +180,15 @@ def call_to_metadata(
         merged.index = metadata.index
         return merged
     else:
-        df_temp = df_temp.rename(columns={df_temp.columns[0]: cluster_col})
-        merged = metadata.merge(df_temp, on=cluster_col, how="left", suffixes=("", ".clustify"))
-        merged.index = metadata.index
-        return merged
+        calls = df_temp.set_index(df_temp.columns[0])
+        return metadata.join(calls, how="left", rsuffix=".clustify", validate="many_to_one")
 
 
 def call_consensus(list_of_res: list[pd.DataFrame]) -> pd.DataFrame:
     """Combine multiple ``cor_to_call_rank`` outputs into a consensus call."""
     res = pd.concat(list_of_res, ignore_index=True)
     cols = list(res.columns[:2])
-    rank_col = res.columns[2]
+    rank_col = "rank"
 
     grouped = res.groupby(cols, sort=False)[rank_col].mean().reset_index()
     best_rank = grouped.groupby(cols[0], sort=False)[rank_col].transform("min")
