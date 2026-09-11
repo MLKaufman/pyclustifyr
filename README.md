@@ -15,6 +15,8 @@ Wrap NumPy arrays in DataFrames with gene and cell labels first.
 
 See the [complete API reference](docs/api.md) for signatures, parameters, return
 types, and [runnable examples](docs/api.md#runnable-examples).
+Release notes are in the [changelog](CHANGELOG.md); existing users should also
+read the [API migration guide](docs/api-migration.md).
 
 Indexed metadata is matched to expression columns by cell ID, so reordering
 metadata rows does not change cluster scores. IDs must be unique and match the

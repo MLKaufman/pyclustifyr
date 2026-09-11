@@ -37,6 +37,7 @@ Homepage = "https://github.com/MLKaufman/pyclustifyr"
 Documentation = "https://github.com/MLKaufman/pyclustifyr/blob/main/docs/api.md"
 Repository = "https://github.com/MLKaufman/pyclustifyr"
 Issues = "https://github.com/MLKaufman/pyclustifyr/issues"
+Changelog = "https://github.com/MLKaufman/pyclustifyr/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["uv_build>=0.11.26,<0.12.0"]
