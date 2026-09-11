@@ -29,13 +29,16 @@ def cor_to_call(
     """Take the best-scoring reference type per cluster/cell.
 
     Ties are marked with a ``-CLASH!`` suffix on the type, matching R's
-    ``cor_to_call()``.
+    ``cor_to_call()``. Missing correlations never compete for a call; rows
+    without valid scores are unassigned with a missing ``r``.
     """
     cluster_col = cluster_col or "cluster"
-    correlation_matrix = cor_mat.fillna(0)
+    missing_rows = cor_mat.index[cor_mat.isna().all(axis=1)]
+    correlation_matrix = cor_mat.fillna(-np.inf)
 
     if threshold == "auto":
-        threshold = round(0.75 * float(np.nanmax(correlation_matrix.to_numpy())), 2)
+        values = cor_mat.to_numpy()
+        threshold = round(0.75 * float(np.nanmax(values)), 2) if (~pd.isna(values)).any() else 0
 
     long = _melt_cor_mat(correlation_matrix, cluster_col)
 
@@ -51,6 +54,9 @@ def cor_to_call(
         best.loc[clash_mask, "type"] = best.loc[clash_mask, "type"] + "-CLASH!"
         best = best.drop_duplicates(subset=[c for c in best.columns if c != "type"])
 
+    missing = best[cluster_col].isin(missing_rows)
+    best.loc[missing, "type"] = unassigned_label
+    best.loc[missing, "r"] = np.nan
     result = best
 
     if collapse_to_cluster is not False:

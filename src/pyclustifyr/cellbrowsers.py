@@ -46,7 +46,12 @@ def get_ucsc_reference(cb_url: str, cluster_col: str, timeout: float = 60, **kwa
     mdata_resp = requests.get(mdata_url, timeout=timeout)
     if mdata_resp.status_code >= 400:
         raise ValueError(f"unable to find metadata at url: {mdata_url}")
-    mdata = pd.read_csv(io.StringIO(mdata_resp.text), sep="\t")
+    # Cell Browser stores cell IDs in the first metadata column. Read IDs
+    # as strings so numeric-looking barcodes keep leading zeros.
+    id_col = kwargs.pop("cell_col", None)
+    headers = pd.read_csv(io.StringIO(mdata_resp.text), sep="\t", nrows=0).columns
+    id_col = id_col if id_col is not None else headers[0]
+    mdata = pd.read_csv(io.StringIO(mdata_resp.text), sep="\t", dtype={id_col: str})
 
     mat_url = f"{base}/{ds_path}/exprMatrix.tsv.gz"
     mat_resp = requests.get(mat_url, timeout=timeout)
@@ -63,4 +68,12 @@ def get_ucsc_reference(cb_url: str, cluster_col: str, timeout: float = 60, **kwa
             "please set the if_log argument for average clusters accordingly"
         )
 
-    return average_clusters(mat, mdata, cluster_col=cluster_col, **kwargs)
+    if id_col not in mdata.columns:
+        raise ValueError(f"cell ID column {id_col!r} is not in metadata")
+    ids = mdata[id_col]
+    if ids.isna().any() or ids.duplicated().any():
+        raise ValueError("metadata cell IDs must be present and unique")
+    if set(ids) != set(mat.columns):
+        raise ValueError("metadata cell IDs do not match expression matrix columns")
+    mdata = mdata.set_index(id_col, drop=False).loc[mat.columns]
+    return average_clusters(mat, mdata, cluster_col=cluster_col, cell_col=id_col, **kwargs)

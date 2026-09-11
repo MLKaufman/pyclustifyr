@@ -17,10 +17,11 @@ _RP_PATTERN = re.compile(r"^RP[0-9,LS]|^Rp[0-9,ls]")
 def binarize_expr(mat: pd.DataFrame, n: int = 1000, cut: float = 0) -> pd.DataFrame:
     """Keep the top ``n`` genes per column with expression strictly above ``cut``."""
     arr = mat.to_numpy(dtype=float)
+    selected = arr > cut
     if n < mat.shape[0]:
         ranks = np.apply_along_axis(lambda col: rankdata(-col, method="average"), axis=0, arr=arr)
-        arr = np.where(ranks > n, 0, arr)
-    out = (arr > cut).astype(int)
+        selected &= ranks <= n
+    out = selected.astype(int)
     return pd.DataFrame(out, index=mat.index, columns=mat.columns)
 
 

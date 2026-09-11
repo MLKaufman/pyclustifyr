@@ -58,8 +58,9 @@ def calc_gsea_stat(ranks: np.ndarray, hit_positions: np.ndarray, gsea_param: flo
 
 
 def _prepare_ranks(stats: pd.Series) -> tuple[np.ndarray, dict]:
-    order = np.argsort(-stats.to_numpy())
-    sorted_ranks = stats.to_numpy()[order]
+    values = stats.to_numpy(dtype=float)
+    order = np.argsort(-values, kind="stable")
+    sorted_ranks = values[order]
     gene_to_pos = {gene: pos for pos, gene in enumerate(stats.index.to_numpy()[order])}
     return sorted_ranks, gene_to_pos
 
@@ -215,16 +216,33 @@ def plot_pathway_gsea(
 def gmt_to_list(
     path: str,
     cutoff: int = 0,
-    sep: str = r"\thttp://www.broadinstitute.org/gsea/msigdb/cards/.*?\t",
+    sep: str | None = None,
 ) -> dict[str, list]:
-    """Parse a GMT-format pathway file (as exported by MSigDB) into a name -> genes dict."""
+    """Parse GMT rows as name, description, then tab-separated genes.
+
+    Descriptions may be arbitrary text, including URLs or ``na``. An explicit
+    ``sep`` retains the legacy custom-regex parsing behavior.
+    """
     pathways = {}
     opener = gzip.open if str(path).endswith(".gz") else open
     with opener(path, "rt") as fh:
-        for line in fh:
-            path_name, genes_str = re.split(sep, line.rstrip("\n"), maxsplit=1)
+        for line_number, line in enumerate(fh, start=1):
+            line = line.rstrip("\r\n")
+            if not line.strip() or line.startswith("#"):
+                continue
+            if sep is None:
+                fields = line.split("\t")
+                if len(fields) < 3 or not fields[0]:
+                    raise ValueError(f"invalid GMT row at line {line_number}: expected name, description, and genes")
+                path_name, _, *genes = fields
+            else:
+                fields = re.split(sep, line, maxsplit=1)
+                if len(fields) != 2:
+                    raise ValueError(f"invalid GMT row at line {line_number}: separator not found")
+                path_name, genes_str = fields
+                genes = genes_str.split("\t")
             path_name = path_name.replace("REACTOME_", "")
-            genes = genes_str.split("\t")
+            genes = [g for g in genes if g]
             if cutoff <= 0 or len(genes) >= cutoff:
                 pathways[path_name] = genes
     return pathways

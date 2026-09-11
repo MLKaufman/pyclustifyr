@@ -171,11 +171,15 @@ def percent_clusters(
     cluster_col: str = "cluster",
     cut_num: float = 0.5,
 ) -> pd.DataFrame:
-    """Fraction of cells per cluster with expression above ``cut_num``."""
-    binarized = mat.copy()
-    binarized = binarized.where(binarized < cut_num, 1)
-    binarized = binarized.where(binarized >= cut_num, 0)
-    return average_clusters(binarized, metadata, cluster_col=cluster_col, if_log=False)
+    """Fraction of cells per cluster with expression at least ``cut_num``.
+
+    Returns fractions on the original [0, 1] scale. Missing expression values
+    are excluded from each gene's denominator.
+    """
+    binarized = (mat >= cut_num).astype(float).where(mat.notna())
+    return average_clusters(
+        binarized, metadata, cluster_col=cluster_col, if_log=False, output_log=False,
+    )
 
 
 def get_best_match_matrix(cor_mat: pd.DataFrame) -> pd.DataFrame:
