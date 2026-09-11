@@ -1,7 +1,7 @@
 [project]
 name = "pyclustifyr"
 version = "0.1.0"
-description = "Add your description here"
+description = "Python port of clustifyR for reference-based cell-type annotation of single-cell RNA-seq data"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -9,6 +9,20 @@ authors = [
     { name = "Michael Kaufman", email = "MLKaufman@users.noreply.github.com" }
 ]
 requires-python = ">=3.11"
+keywords = [
+    "clustifyr",
+    "single-cell",
+    "rna-seq",
+    "cell-type-annotation",
+    "bioinformatics",
+    "anndata",
+]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
 dependencies = [
     "anndata>=0.12.19",
     "matplotlib>=3.11.0",
@@ -17,6 +31,12 @@ dependencies = [
     "requests>=2.34.2",
     "scipy>=1.17.1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/MLKaufman/pyclustifyr"
+Documentation = "https://github.com/MLKaufman/pyclustifyr/blob/main/docs/api.md"
+Repository = "https://github.com/MLKaufman/pyclustifyr"
+Issues = "https://github.com/MLKaufman/pyclustifyr/issues"
 
 [build-system]
 requires = ["uv_build>=0.11.26,<0.12.0"]
