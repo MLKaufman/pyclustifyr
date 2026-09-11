@@ -210,7 +210,14 @@ def plot_best_call(
     df_full = call_to_metadata(df_temp, metadata=metadata, cluster_col=cluster_col, per_cell=per_cell)
 
     if collapse_to_cluster is not False:
-        df_full = collapse_to_cluster_fn(df_full, metadata, collapse_to_cluster, threshold=threshold)
+        target_col = cluster_col if collapse_to_cluster is True else collapse_to_cluster
+        cell_calls = df_full[["type", "r"]].copy()
+        cell_calls.insert(0, "cell_id", df_full.index)
+        collapsed = collapse_to_cluster_fn(cell_calls, metadata, target_col, threshold=threshold)
+        # Keep the per-cell score for plot_r, but color every cell by its
+        # cluster's majority call while retaining embedding coordinates.
+        df_full["type"] = df_full[target_col].map(collapsed.set_index(target_col)["type"])
+        df_full["type"] = df_full["type"].fillna("unassigned")
 
     g = plot_dims(df_full, feature="type", x=x, y=y, **kwargs)
     if plot_r:

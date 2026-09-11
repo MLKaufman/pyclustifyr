@@ -243,7 +243,6 @@ def get_similarity(
     cluster_ids = ["unknown" if pd.isna(c) else c for c in cluster_ids]
 
     if not per_cell:
-        sc_clust = sorted(set(cluster_ids))
         clust_avg = average_clusters(
             expr_mat,
             cluster_ids,
@@ -251,6 +250,7 @@ def get_similarity(
             low_threshold=low_threshold,
             method=pseudobulk_method,
         )
+        sc_clust = list(clust_avg.columns)
     else:
         sc_clust = cluster_ids
         clust_avg = expr_mat

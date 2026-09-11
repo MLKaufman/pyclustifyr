@@ -35,8 +35,14 @@ def _marker_calls(scores, metric, output_high, cluster_col, threshold):
             with np.errstate(divide="ignore"):
                 scores = -np.log10(scores)
         elif metric == "spearman":
-            scores = scores.to_numpy().max() - scores
-    return cor_to_call(scores, cluster_col=cluster_col, threshold=threshold)
+            scores = scores.max().max() - scores
+    # Undefined marker comparisons must not compete with valid zero scores.
+    calls = cor_to_call(scores.fillna(-np.inf), cluster_col=cluster_col, threshold=threshold)
+    invalid = scores.index[scores.isna().all(axis=1)]
+    mask = calls.iloc[:, 0].isin(invalid)
+    calls.loc[mask, "type"] = "unassigned"
+    calls.loc[mask, "r"] = np.nan
+    return calls
 
 
 def _marker_per_cell(metric, per_cell, input_markers=False):
@@ -227,7 +233,11 @@ def clustify_lists(
 
     if metric == "consensus":
         results = [
-            clustify_lists(input, marker, metadata=metadata, cluster_col=cluster_col, metric=m, verbose=False)
+            clustify_lists(
+                input, marker, metadata=metadata, cluster_col=cluster_col, metric=m,
+                if_log=if_log, topn=topn, cut=cut, genome_n=genome_n,
+                low_threshold_cell=low_threshold_cell, verbose=False,
+            )
             for m in ("hyper", "jaccard", "pct", "posneg")
         ]
         call_list = [cor_to_call_rank(r, cluster_col=cluster_col or "cluster") for r in results]
@@ -244,6 +254,11 @@ def clustify_lists(
         if not all(pd.api.types.is_numeric_dtype(marker[c]) for c in marker.columns):
             marker = pos_neg_marker(marker)
         res = pos_neg_select(input_avg, marker, metadata, cluster_col=cluster_col)
+
+    if metric in ("pct", "posneg") and low_threshold_cell > 0:
+        labels = metadata[cluster_col] if isinstance(metadata, pd.DataFrame) else pd.Series(metadata)
+        counts = labels.value_counts()
+        res = res.loc[res.index.isin(counts.index[counts >= low_threshold_cell])]
 
     scores = res["res"] if isinstance(res, dict) else res
     if verbose:

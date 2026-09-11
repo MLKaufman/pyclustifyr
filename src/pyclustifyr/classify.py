@@ -180,10 +180,14 @@ def call_to_metadata(
             raise ValueError("cluster_col is not a column of metadata")
         if cluster_col not in df_temp.columns:
             raise ValueError("cluster_col is not a column of called cell type dataframe")
+        original_clusters = metadata[cluster_col]
+        metadata = metadata.copy()
+        metadata[cluster_col] = original_clusters.astype(object).where(original_clusters.notna(), "orig.NA")
         if not set(df_temp[cluster_col].unique()).issubset(set(metadata[cluster_col].unique())):
             raise ValueError("cluster_col from clustify step and joining to metadata step are not the same")
         merged = metadata.merge(df_temp, on=cluster_col, how="left", suffixes=("", ".clustify"))
         merged.index = metadata.index
+        merged[cluster_col] = original_clusters
         return merged
     else:
         calls = df_temp.set_index(df_temp.columns[0])

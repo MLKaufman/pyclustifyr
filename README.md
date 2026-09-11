@@ -177,7 +177,15 @@ scores = clustify_lists(
 call selection still chooses the strongest match. Call thresholds always use
 the higher-is-better scale (for hyper/GSEA, `-log10(p)`). Percentage,
 positive/negative, and consensus scores describe clusters; `vec_out=True`
-expands those calls to cells in metadata order.
+expands those calls to cells in metadata order. Consensus applies the supplied
+`topn`, `cut`, `if_log`, `genome_n`, and `low_threshold_cell` settings to its
+component methods where applicable.
+
+Marker binarization uses a strict `expression > cut` boundary. Missing marker
+entries are ignored. The rank-distance metric (`"spearman"`) requires at least
+two shared genes; comparisons with insufficient overlap are missing, and cells
+with no valid comparisons are unassigned. Hypergeometric scoring rejects
+invalid gene-universe sizes.
 
 When writing predictions back to metadata, existing output columns with the
 same names are replaced. Use `rename_prefix` to keep separate sets of predictions.

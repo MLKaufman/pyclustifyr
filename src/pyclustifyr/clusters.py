@@ -24,10 +24,10 @@ def _cluster_ids_from_metadata(mat: pd.DataFrame, metadata, cluster_col: str | N
         cluster_ids = list(cluster_info)
     else:
         cluster_ids = list(metadata)
-        if mat.shape[1] != len(cluster_ids):
-            raise ValueError(
-                "vector of cluster assignments does not match the number of columns in the matrix"
-            )
+    if mat.shape[1] != len(cluster_ids):
+        raise ValueError(
+            "cluster assignments do not match the number of columns in the matrix"
+        )
     return cluster_ids
 
 
@@ -94,7 +94,11 @@ def average_clusters(
     ):
         ordered_keys = [c for c in metadata[cluster_col].cat.categories if c in groups]
     else:
-        ordered_keys = sorted(groups.keys())
+        try:
+            ordered_keys = sorted(groups.keys())
+        except TypeError:
+            # Missing-label sentinels may coexist with numeric cluster IDs.
+            ordered_keys = sorted(groups.keys(), key=lambda value: (type(value).__name__, str(value)))
     groups = {k: groups[k] for k in ordered_keys}
 
     if subclusterpower > 0:

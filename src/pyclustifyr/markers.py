@@ -193,7 +193,10 @@ def feature_select_pca(
     percentile: float = 0.99,
     if_log: bool = True,
 ) -> list:
-    """Select genes with the largest loadings on the top ``n_pcs`` principal components."""
+    """Select genes with the largest loadings on up to ``n_pcs`` components.
+
+    If fewer components are available, use all available components.
+    """
     if pcs is None:
         data = mat if if_log else np.log(mat + 1)
         centered = data.T - data.T.mean(axis=0)
@@ -203,7 +206,7 @@ def feature_select_pca(
         pca = pcs
 
     genes = []
-    for i in range(n_pcs):
+    for i in range(min(n_pcs, pca.shape[1])):
         loadings = pca.iloc[:, i].abs()
         cutoff = np.quantile(loadings.to_numpy(), percentile)
         genes.extend(loadings.index[loadings >= cutoff].tolist())

@@ -15,12 +15,12 @@ _RP_PATTERN = re.compile(r"^RP[0-9,LS]|^Rp[0-9,ls]")
 
 
 def binarize_expr(mat: pd.DataFrame, n: int = 1000, cut: float = 0) -> pd.DataFrame:
-    """Binarize an expression matrix, keeping only the top ``n`` genes per column."""
+    """Keep the top ``n`` genes per column with expression strictly above ``cut``."""
     arr = mat.to_numpy(dtype=float)
     if n < mat.shape[0]:
         ranks = np.apply_along_axis(lambda col: rankdata(-col, method="average"), axis=0, arr=arr)
         arr = np.where(ranks > n, 0, arr)
-    out = np.where(arr > cut, 1, np.where(arr < cut, 0, arr))
+    out = (arr > cut).astype(int)
     return pd.DataFrame(out, index=mat.index, columns=mat.columns)
 
 
@@ -55,10 +55,13 @@ def matrixize_markers(
 
     if "gene" not in df.columns:
         cluster_order = list(df.columns)
-        df = df.astype(str).melt(var_name="cluster", value_name="gene")
+        df = df.melt(var_name="cluster", value_name="gene")
         df["cluster"] = pd.Categorical(df["cluster"], categories=cluster_order)
     else:
         cluster_order = _cluster_order(df, "cluster")
+
+    df = df.dropna(subset=["gene", "cluster"])
+    df["gene"] = df["gene"].astype(str)
 
     if remove_rp:
         df = df[~df["gene"].str.contains(_RP_PATTERN)]
@@ -67,6 +70,8 @@ def matrixize_markers(
         counts = df.groupby("gene")["gene"].transform("size")
         df = df[counts == 1]
 
+    if df.empty:
+        return pd.DataFrame(columns=cluster_order, dtype=float if ranked else object)
     cut_num = df.groupby("cluster", observed=True).size().min()
     if n is not None and n < cut_num:
         cut_num = n
@@ -108,7 +113,12 @@ def compare_lists(
     output_high: bool = True,
     details_out: bool = False,
 ):
-    """Score how well each column of ``bin_mat`` overlaps with each marker set."""
+    """Score how well each column of ``bin_mat`` overlaps with each marker set.
+
+    Hypergeometric scoring requires a positive integer universe size large
+    enough for the compared sets. Rank-distance ("spearman") comparisons
+    with fewer than two shared genes return NaN rather than a perfect match.
+    """
     unique_vals = pd.unique(bin_mat.iloc[:, 0])
     if len(unique_vals) > 2 and metric != "gsea":
         metric = "spearman"
@@ -126,6 +136,8 @@ def compare_lists(
                 details.loc[x, y] = ",".join(sorted(set(list_top) & set(marker_list), key=list_top.index))
 
     if metric == "hyper":
+        if not isinstance(n, (int, np.integer)) or n <= 0:
+            raise ValueError("gene universe size n must be a positive integer")
         out = np.empty((len(bin_cols), len(marker_cols)))
         for i, x in enumerate(bin_cols):
             list_top = list(bin_mat.index[bin_mat[x] == 1])
@@ -135,6 +147,8 @@ def compare_lists(
                 t = len(set(list_top) & set(marker_list))
                 a = max(len(list_top), len(marker_list))
                 b = min(len(list_top), len(marker_list))
+                if n < a:
+                    raise ValueError("gene universe size n is smaller than a query or marker set")
                 pval = sum(hypergeom.pmf(k, n, a, b) for k in range(t, b + 1))
                 raw.append(pval)
             out[i] = _p_adjust_holm(raw)
@@ -160,6 +174,9 @@ def compare_lists(
             for j, y in enumerate(marker_cols):
                 marker_list = _marker_col(marker_mat, y)
                 v1 = [g for g in marker_list if g in top_rank]
+                if len(set(v1)) < 2:
+                    out[i, j] = np.nan
+                    continue
                 v2 = [g for g in list_top if g in v1]
                 v2_rank = {gene: rank for rank, gene in enumerate(v2)}
                 out[i, j] = sum(abs(i2 - v2_rank[g]) for i2, g in enumerate(v1))
@@ -180,7 +197,7 @@ def compare_lists(
         if metric in ("hyper", "gsea"):
             res = -np.log10(res)
         elif metric == "spearman":
-            res = -res + res.to_numpy().max()
+            res = -res + res.max().max()
 
     if details_out:
         return {"res": res, "details": details}
@@ -192,9 +209,11 @@ def _p_adjust_holm(pvals: list[float]) -> np.ndarray:
     p = np.asarray(pvals, dtype=float)
     n = len(p)
     order = np.argsort(p)
-    adjusted = np.empty(n)
+    adjusted = np.full(n, np.nan)
     running_max = 0.0
     for i, idx in enumerate(order):
+        if not np.isfinite(p[idx]):
+            continue
         val = (n - i) * p[idx]
         running_max = max(running_max, val)
         adjusted[idx] = min(running_max, 1.0)
