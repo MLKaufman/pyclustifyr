@@ -62,7 +62,8 @@ def kl_divergence(
 
     Reads are rescaled to a pseudo-library size of ``total_reads``, rounded to
     pseudo-counts, and KL-divergence (with shrinkage) is linearly rescaled from
-    [0, max_kl] to a similarity score in [-1, 1].
+    [0, max_kl] to a similarity score in [-1, 1]. The result is not clipped;
+    divergence above ``max_kl`` produces a score below -1.
     """
     vec1 = np.asarray(vec1, dtype=float)
     vec2 = np.asarray(vec2, dtype=float)

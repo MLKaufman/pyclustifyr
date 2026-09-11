@@ -78,7 +78,8 @@ def clustify(
     ``cluster_col``) and is required unless ``per_cell=True``.
 
     Returns a clusters x cell-types similarity matrix by default, or a list of
-    per-cluster/per-cell type calls if ``vec_out=True``.
+    type calls per cell in metadata row order if ``vec_out=True``. Cluster
+    calls are repeated for their member cells.
     """
     if compute_method not in clustifyr_methods:
         raise ValueError(f"{compute_method} correlation method not implemented")

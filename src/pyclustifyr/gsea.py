@@ -10,9 +10,9 @@ permutation testing scheme follows the same statistical design as the
 original (pre-multilevel-splitting) GSEA/fgsea algorithm: for each gene set,
 sample random gene sets of the same size from the ranking and use their
 enrichment scores as a null distribution to estimate a p-value and NES.
-Unlike fgsea's ``fgseaMultilevel``, permutations are not pooled across gene
-sets of matching size, so results won't bit-for-bit match R's RNG, but the
-same statistical target is estimated.
+Null samples are reused for gene sets of matching size within one
+``fgsea_simple`` call. This is not the adaptive multilevel algorithm used by
+``fgseaMultilevel``, and identical R p-values or NES are not guaranteed.
 """
 
 from __future__ import annotations

@@ -10,7 +10,11 @@ expression against reference expression data (bulk RNA-seq, sorted populations,
 other scRNA-seq atlases) or against marker gene lists — no manual marker-gene
 squinting required.
 
-Works on plain `pandas`/`numpy` matrices or directly on `AnnData` objects.
+Works on labeled `pandas.DataFrame` matrices or directly on `AnnData` objects.
+Wrap NumPy arrays in DataFrames with gene and cell labels first.
+
+See the [complete API reference](docs/api.md) for signatures, parameters, return
+types, and [runnable examples](docs/api.md#runnable-examples).
 
 Indexed metadata is matched to expression columns by cell ID, so reordering
 metadata rows does not change cluster scores. IDs must be unique and match the
@@ -30,8 +34,6 @@ Or into an existing environment with `pip`:
 ```bash
 pip install git+https://github.com/MLKaufman/pyclustifyr
 ```
-
-> Replace the URL above with wherever this repo actually ends up hosted, if different.
 
 To work on the package itself, clone it and let `uv` set up the environment:
 
@@ -80,8 +82,8 @@ print(cor_to_call(similarity))
 `compute_method` selects the similarity metric — `"spearman"` (default),
 `"pearson"`, `"kendall"`, `"cosine"`, or `"kl_divergence"`. Pass
 `per_cell=True` to classify individual cells instead of clusters, or
-`vec_out=True` to get back a plain list of per-cluster/per-cell calls instead
-of the similarity matrix.
+`vec_out=True` to get a list containing one call per cell in metadata row order
+(cluster calls are repeated for their member cells).
 
 ### Runnable end-to-end example
 
@@ -118,7 +120,7 @@ ref.loc[genes[0:10], "T cell"] += 15
 ref.loc[genes[10:20], "B cell"] += 15
 ref.loc[genes[20:30], "NK cell"] += 15
 
-similarity = clustify(expr, ref, metadata=metadata, cluster_col="cluster")
+similarity = clustify(expr, ref, metadata=metadata, cluster_col="cluster", if_log=False)
 print(cor_to_call(similarity))
 ```
 
@@ -130,6 +132,7 @@ print(cor_to_call(similarity))
 behavior):
 
 ```python
+import pandas as pd
 import scanpy as sc
 from pyclustifyr import clustify_adata
 
@@ -228,10 +231,11 @@ nes = calculate_pathway_gsea(cluster_avg, pathways, n_perm=1000)
 print(nes.round(2))  # clusters x pathways, normalized enrichment scores
 ```
 
-> The core enrichment-score statistic matches R's `fgsea:::calcGseaStat` exactly.
-> Permutation-based p-values/NES follow the same statistical design as fgsea but
-> aren't pooled across same-size gene sets the way `fgseaMultilevel` is, so exact
-> values won't bit-for-bit match R's RNG — they converge to the same numbers.
+> The core enrichment-score statistic is checked against R's
+> `fgsea:::calcGseaStat` fixtures. P-values and NES use random gene sets of the
+> same size, with null samples reused for equal-sized pathways within one
+> `fgsea_simple()` call. This is a simple permutation method, not
+> `fgseaMultilevel`; identical R p-values or NES are not guaranteed.
 
 GSEA requires unique gene IDs in its ranking input and rejects duplicates;
 resolve them explicitly before analysis. It deduplicates pathway genes and excludes nonfinite ranking statistics
@@ -266,7 +270,8 @@ ref_mat = get_ucsc_reference(
 | `gsea.py` | Preranked GSEA: `run_gsea`, `calculate_pathway_gsea`, `gmt_to_list`, `plot_pathway_gsea` |
 | `cellbrowsers.py` | `get_ucsc_reference` — build a reference from a UCSC Cell Browser dataset |
 
-`permute_similarity()` counts tied null scores in the upper tail and returns
+[`permute_similarity()`](docs/api.md#permute_similarity), imported from
+`pyclustifyr.similarity`, counts tied null scores in the upper tail and returns
 `(1 + count(null >= observed)) / (n_perm + 1)`. This deliberately differs from
 R's strict-greater-than calculation: identical profiles yield p=1, and finite
 permutation runs never report p=0. Undefined observed or null scores yield
