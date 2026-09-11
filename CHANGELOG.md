@@ -4,11 +4,10 @@ User-facing changes are recorded here. See the [API reference](docs/api.md) for
 current behavior and the [migration guide](docs/api-migration.md) for changes to
 existing code.
 
-## Unreleased
+## 1.0.0 — 2026-09-11
 
-Release notes for the initial Python implementation and subsequent fixes before
-1.0. The package version remains `0.1.0`; this section does not announce a
-published 1.0 release.
+First stable release of the Python implementation, including the fixes and
+API changes developed during the pre-1.0 review.
 
 ### Added
 
@@ -112,6 +111,6 @@ published 1.0 release.
 
 At the API-stability checkpoint, all 262 tests passed on each of Python
 3.11–3.14 on macOS. Isolated package builds, the installed-wheel smoke check,
-and API documentation examples also passed. These are local validation results;
-the configured GitHub matrix must pass before cross-platform release readiness
-is confirmed.
+and API documentation examples also passed. The pre-release GitHub CI matrix
+also passed all 12 Python/operating-system combinations. The versioned release
+commit is checked again before tagging.
