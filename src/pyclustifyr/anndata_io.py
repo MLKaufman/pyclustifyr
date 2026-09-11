@@ -15,7 +15,7 @@ import pandas as pd
 
 from .classify import call_to_metadata, cor_to_call
 from .clusters import average_clusters
-from .clustify import clustify, clustify_lists
+from .clustify import _marker_calls, _marker_per_cell, clustify, clustify_lists
 
 
 def object_data(
@@ -154,8 +154,12 @@ def clustify_lists_adata(
     if vec_out or not obj_out:
         return res
 
-    df_temp = cor_to_call(res, metadata=metadata, cluster_col=cluster_col, threshold=threshold)
+    metric = kwargs.get("metric", "hyper")
+    scores = res["res"] if isinstance(res, dict) else res
+    df_temp = _marker_calls(scores, metric, kwargs.get("output_high", True), cluster_col, threshold)
+    output_per_cell = _marker_per_cell(metric, per_cell, kwargs.get("input_markers", False))
     df_full = call_to_metadata(
-        df_temp, metadata=metadata, cluster_col=cluster_col, per_cell=per_cell, rename_prefix=rename_prefix
+        df_temp, metadata=metadata, cluster_col=cluster_col,
+        per_cell=output_per_cell, rename_prefix=rename_prefix,
     )
     return write_meta(adata, df_full)

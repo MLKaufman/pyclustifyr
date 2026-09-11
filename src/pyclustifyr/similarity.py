@@ -274,6 +274,8 @@ def permute_similarity(
     pseudobulk_method: str = "mean",
     rm0: bool = False,
     rng: np.random.Generator | None = None,
+    if_log: bool = True,
+    low_threshold: int = 0,
     **kwargs,
 ) -> dict[str, pd.DataFrame]:
     from .clusters import average_clusters
@@ -283,8 +285,11 @@ def permute_similarity(
     cluster_ids = list(cluster_ids)
 
     if not per_cell:
-        sc_clust = sorted(set(cluster_ids))
-        clust_avg = average_clusters(expr_mat, cluster_ids, method=pseudobulk_method)
+        clust_avg = average_clusters(
+            expr_mat, cluster_ids, method=pseudobulk_method,
+            if_log=if_log, low_threshold=low_threshold,
+        )
+        sc_clust = list(clust_avg.columns)
     else:
         sc_clust = list(expr_mat.columns)
         clust_avg = expr_mat
@@ -297,7 +302,10 @@ def permute_similarity(
     for _ in range(n_perm):
         resampled = rng.permutation(cluster_ids_arr)
         if not per_cell:
-            permuted_avg = average_clusters(expr_mat, list(resampled), method=pseudobulk_method)
+            permuted_avg = average_clusters(
+                expr_mat, list(resampled), method=pseudobulk_method,
+                if_log=if_log, low_threshold=low_threshold,
+            ).reindex(columns=sc_clust)
         else:
             permuted_avg = expr_mat.loc[:, resampled]
 

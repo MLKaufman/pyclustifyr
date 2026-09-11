@@ -163,12 +163,18 @@ def call_to_metadata(
     """Left-join a call table onto metadata.
 
     Per-cell calls use the metadata index as the cell identifier; cluster
-    calls use ``cluster_col``. Metadata row order is preserved.
+    calls use ``cluster_col``. Metadata row order is preserved. Existing
+    prediction columns with the same output names are replaced.
     """
     df_temp = res.copy()
     if rename_prefix is not None:
-        df_temp = df_temp.rename(columns={"type": f"{rename_prefix}_type", "r": f"{rename_prefix}_r"})
+        df_temp = df_temp.rename(columns={
+            "type": f"{rename_prefix}_type", "r": f"{rename_prefix}_r",
+            "rank": f"{rename_prefix}_rank",
+        })
 
+    # Replace previous predictions, without changing the caller's metadata.
+    metadata = metadata.drop(columns=list(df_temp.columns[1:]), errors="ignore")
     if not per_cell:
         if cluster_col not in metadata.columns:
             raise ValueError("cluster_col is not a column of metadata")

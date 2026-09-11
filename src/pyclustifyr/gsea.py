@@ -77,17 +77,21 @@ def fgsea_simple(
 
     ``stats`` maps gene -> ranking metric (e.g. expression). Returns a
     DataFrame with columns ``pathway``, ``pval``, ``es``, ``nes``, ``size``.
+    Nonfinite statistics are excluded from the gene universe; pathway genes
+    are deduplicated. Sets with no overlap or covering the whole universe
+    are skipped because their enrichment statistic is undefined.
     """
     rng = rng or np.random.default_rng()
+    stats = stats.loc[np.isfinite(stats.to_numpy())]
     ranks, gene_to_pos = _prepare_ranks(stats)
     n = len(ranks)
-    max_size = max_size if max_size is not None else n - 1
+    max_size = min(max_size, n - 1) if max_size is not None else n - 1
 
     rows = []
     perm_cache: dict[int, np.ndarray] = {}
 
     for name, genes in pathways.items():
-        hit_positions = np.array([gene_to_pos[g] for g in genes if g in gene_to_pos], dtype=int)
+        hit_positions = np.array([gene_to_pos[g] for g in dict.fromkeys(genes) if g in gene_to_pos], dtype=int)
         size = len(hit_positions)
         if size < min_size or size > max_size or size == 0:
             continue
@@ -154,8 +158,8 @@ def run_gsea(
         found = set(res["pathway"])
         for _, row in res.iterrows():
             rows.append({"cell": col, "pathway": row["pathway"], "pval": row["pval"], "nes": row["nes"]})
-        # Keep pathways with no gene-universe overlap in the output (as NaN) rather
-        # than silently dropping cells, matching this function's fixed output shape.
+        # Preserve the output shape for pathways with no valid enrichment
+        # statistic (no overlap, or covering the entire finite gene universe).
         for name in geneset_list:
             if name not in found:
                 rows.append({"cell": col, "pathway": name, "pval": np.nan, "nes": np.nan})

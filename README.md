@@ -172,7 +172,15 @@ scores = clustify_lists(
 )
 ```
 
-`clustify_lists_adata()` is the `AnnData`-native equivalent.
+`clustify_lists_adata()` is the `AnnData`-native equivalent. With
+`output_high=False`, score matrices retain raw p-values or rank distances;
+call selection still chooses the strongest match. Call thresholds always use
+the higher-is-better scale (for hyper/GSEA, `-log10(p)`). Percentage,
+positive/negative, and consensus scores describe clusters; `vec_out=True`
+expands those calls to cells in metadata order.
+
+When writing predictions back to metadata, existing output columns with the
+same names are replaced. Use `rename_prefix` to keep separate sets of predictions.
 
 ## Plotting
 
@@ -211,6 +219,11 @@ print(nes.round(2))  # clusters x pathways, normalized enrichment scores
 > Permutation-based p-values/NES follow the same statistical design as fgsea but
 > aren't pooled across same-size gene sets the way `fgseaMultilevel` is, so exact
 > values won't bit-for-bit match R's RNG — they converge to the same numbers.
+
+GSEA deduplicates pathway genes and excludes nonfinite ranking statistics
+(including constant genes after scaling) from both scoring and the permutation
+universe. Pathways with no remaining genes or covering the entire remaining
+universe receive missing p-values/NES from `run_gsea()`.
 
 ## Building a reference from a UCSC Cell Browser dataset
 

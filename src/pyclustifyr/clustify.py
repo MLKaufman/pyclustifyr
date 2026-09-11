@@ -5,6 +5,7 @@ Python port of clustifyr's R/main.R (``clustify.default``).
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from .classify import call_consensus, call_to_metadata, cor_to_call, cor_to_call_rank
@@ -23,6 +24,24 @@ def _common_elements(*vecs) -> list:
         v_set = set(v)
         result = [x for x in result if x in v_set]
     return result
+
+
+def _marker_calls(scores, metric, output_high, cluster_col, threshold):
+    """Convert marker scores to calls using the usual higher-is-better scale."""
+    if metric == "consensus":
+        return scores
+    if not output_high:
+        if metric in ("hyper", "gsea"):
+            with np.errstate(divide="ignore"):
+                scores = -np.log10(scores)
+        elif metric == "spearman":
+            scores = scores.to_numpy().max() - scores
+    return cor_to_call(scores, cluster_col=cluster_col, threshold=threshold)
+
+
+def _marker_per_cell(metric, per_cell, input_markers=False):
+    """Whether the resulting scores describe cells rather than clusters."""
+    return metric not in ("pct", "posneg", "consensus") and (per_cell or input_markers)
 
 
 def clustify(
@@ -117,6 +136,8 @@ def clustify(
             compute_method=compute_method,
             pseudobulk_method=pseudobulk_method,
             rm0=rm0,
+            if_log=if_log,
+            low_threshold=low_threshold_cell,
             rng=rng,
             **kwargs,
         )
@@ -173,11 +194,15 @@ def clustify_lists(
 
     For hyper/jaccard/spearman, ``details_out=True`` returns a dictionary
     containing score (``res``) and overlapping-gene (``details``) matrices.
-    It cannot be combined with ``vec_out=True``.
+    It cannot be combined with ``vec_out=True``. For calls, ``threshold``
+    always uses the higher-is-better scale (e.g. -log10(p) for hyper/GSEA),
+    regardless of ``output_high``. Percentage, positive/negative, and consensus
+    metrics return cluster scores; vector output expands calls to each cell.
     """
     if details_out and vec_out:
         raise ValueError("details_out and vec_out cannot both be True")
 
+    output_per_cell = _marker_per_cell(metric, per_cell, input_markers)
     if metric in ("posneg", "pct"):
         per_cell = True
     if input_markers:
@@ -227,13 +252,15 @@ def clustify_lists(
     if not vec_out:
         return res
 
-    if metric != "consensus":
-        df_temp = cor_to_call(res, metadata=metadata, cluster_col=cluster_col, threshold=threshold)
-        df_temp_full = call_to_metadata(
-            df_temp, metadata=metadata, cluster_col=cluster_col, per_cell=per_cell, rename_prefix=rename_prefix
-        )
-    else:
-        df_temp_full = res
-
+    cluster_col = cluster_col or "cluster"
+    if metadata is None:
+        metadata = pd.DataFrame(index=input.columns)
+    elif not isinstance(metadata, pd.DataFrame):
+        metadata = pd.DataFrame({cluster_col: list(metadata)}, index=input.columns)
+    df_temp = _marker_calls(res, metric, output_high, cluster_col, threshold)
+    df_temp_full = call_to_metadata(
+        df_temp, metadata=metadata, cluster_col=cluster_col,
+        per_cell=output_per_cell, rename_prefix=rename_prefix,
+    )
     col = f"{rename_prefix}_type" if rename_prefix else "type"
     return list(df_temp_full[col])
