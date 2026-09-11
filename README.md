@@ -1,5 +1,9 @@
 # pyclustifyr
 
+<p align="center">
+  <img src="docs/assets/pyclustifyr-logo.png" alt="pyclustifyr logo: three connected cell clusters forming a C" width="320">
+</p>
+
 A Python port of the R package [clustifyr](https://github.com/rnabioco/clustifyr):
 classify single-cell RNA-seq clusters (or individual cells) by correlating their
 expression against reference expression data (bulk RNA-seq, sorted populations,
